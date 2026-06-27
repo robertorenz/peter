@@ -1,0 +1,11 @@
+# the full orchestral score (25 MB) — kept locally, not in git
+IMSLP*.pdf
+*.pdf
+
+# audio drop-in (optional real recording)
+peter-theme.mp3
+
+# python/tooling artifacts
+tools/themes_js.json
+tools/themes_inline.js
+__pycache__/

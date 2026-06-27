@@ -30,9 +30,36 @@ Open `index.html` in any modern browser. That's it.
 
 ## 🎵 Music & friends
 
-- A jaunty, Prokofiev-flavored **theme melody** loops while you play (all synthesized in code — press `M` to mute).
+- Each level plays the **actual Prokofiev character leitmotif**, transcribed from the
+  orchestral score: **Peter's theme** (strings) in the Meadow, the **Duck's theme**
+  (oboe) in the rescue. They're played by a small in-code synth, so no audio files
+  are required (press `M` to mute).
+- Prefer the real orchestral recording? Drop a `peter-theme.mp3` into this folder and
+  the game will loop it instead of the synth.
 - The **🐦 bird** flutters near Peter and dive-bombs the wolf when it gives chase, breaking its focus.
 - The **🦆 duck** paddles in the pond and dives underwater when the wolf prowls too close.
+
+## 🎼 The themes (MIDI)
+
+The `themes/` folder holds one MIDI file per character, transcribed from Prokofiev's
+own "character motives" reference page of the score:
+
+| File | Character | Instrument |
+| --- | --- | --- |
+| `01_peter.mid` | Peter | Strings |
+| `02_duck.mid` | The Duck (Sonia) | Oboe |
+| `03_bird.mid` | The Bird (Sasha) | Flute |
+| `04_cat.mid` | The Cat (Ivan) | Clarinet |
+| `05_grandfather.mid` | Grandfather | Bassoon |
+| `06_wolf.mid` | The Wolf | French Horns |
+| `07_hunters.mid` | The Hunters | March + Timpani |
+
+These are careful transcriptions of each motif's **principal melodic line** (not the full
+orchestration) and are easy to edit. Regenerate them with:
+
+```
+python tools/make_themes.py
+```
 
 ## 🐺 The wolf
 

@@ -212,18 +212,12 @@
       o.start(t); o.stop(t + dur + 0.02);
     }
 
-    // --- looping background melody (a jaunty, Peter-ish string tune) ---
-    const N = {C4:261.63,D4:293.66,E4:329.63,F4:349.23,G4:392.00,A4:440.00,
-               B4:493.88,C5:523.25,D5:587.33,E5:659.25,R:0};
-    const Q=20, H2=40;
-    const MELODY = [
-      [N.G4,Q],[N.A4,Q],[N.G4,Q],[N.E4,Q], [N.G4,H2],[N.C5,H2],
-      [N.B4,Q],[N.A4,Q],[N.G4,Q],[N.A4,Q], [N.G4,H2],[N.R,Q],
-      [N.E5,Q],[N.D5,Q],[N.C5,Q],[N.B4,Q], [N.C5,H2],[N.A4,H2],
-      [N.G4,Q],[N.A4,Q],[N.B4,Q],[N.C5,Q], [N.G4,H2],[N.R,H2],
-    ];
-    // Real recording: drop a "peter-theme.mp3" in this folder and the game plays it
-    // on loop instead of the synth fallback below.
+    // --- Prokofiev character leitmotifs, transcribed from the score (notes are
+    //     [MIDI, frames@60fps], 0 = rest). See tools/make_themes.py + /themes/*.mid ---
+    const THEMES = {peter:{bpm:144,notes:[[67,25],[72,25],[72,12],[74,12],[76,25],[74,25],[76,25],[72,50],[76,25],[77,25],[79,12],[77,12],[76,25],[74,25],[72,50],[0,25],[67,25],[72,25],[76,25],[79,25],[81,25],[79,25],[76,25],[72,25],[74,25],[71,25],[74,25],[77,25],[76,50],[72,50]]},duck:{bpm:92,notes:[[74,39],[72,20],[70,20],[72,39],[74,59],[72,20],[70,39],[69,39],[70,20],[72,20],[69,39],[67,78],[0,39],[70,39],[69,20],[67,20],[65,39],[67,59],[69,20],[70,39],[69,39],[67,20],[66,20],[67,39],[67,117]]},bird:{bpm:152,notes:[[88,6],[89,6],[88,6],[89,6],[88,6],[89,6],[88,6],[89,6],[88,6],[87,6],[86,6],[85,6],[84,12],[83,12],[81,6],[83,6],[84,6],[86,6],[88,6],[89,6],[91,6],[93,6],[91,12],[88,12],[84,24],[86,6],[88,6],[86,6],[88,6],[86,6],[88,6],[86,6],[88,6],[89,12],[86,12],[83,12],[79,12],[84,47],[0,47]]},cat:{bpm:112,notes:[[48,16],[52,16],[55,16],[52,16],[55,16],[57,16],[55,32],[53,16],[57,16],[60,16],[57,16],[56,16],[57,16],[52,32],[52,16],[55,16],[59,16],[55,16],[58,16],[59,16],[55,32],[57,16],[53,16],[50,16],[53,16],[52,64]]},grandfather:{bpm:88,notes:[[50,20],[0,20],[50,20],[52,20],[54,20],[52,20],[50,41],[45,20],[50,20],[54,20],[52,20],[50,41],[45,41],[50,14],[52,14],[54,14],[55,41],[54,41],[52,41],[50,82],[45,82]]},wolf:{bpm:76,notes:[[55,47],[55,47],[56,47],[55,47],[56,47],[55,47],[53,95],[54,47],[55,47],[56,47],[55,47],[51,95],[50,95]]},hunters:{bpm:120,notes:[[69,22],[69,8],[69,30],[74,30],[69,30],[70,30],[69,30],[67,30],[65,30],[69,22],[69,8],[69,30],[74,30],[77,30],[76,60],[69,60]]}};
+
+    // Real recording: drop a "peter-theme.mp3" in this folder to play it on loop
+    // instead of the synth.
     let track = null, trackOk = false;
     try {
       track = new window.Audio("peter-theme.mp3");
@@ -232,18 +226,20 @@
       track.addEventListener("error", () => { trackOk = false; });
     } catch (e) { track = null; }
 
-    let musicOn=false, mIdx=0, mWait=0;
-    function musicNote(freq, frames){
-      if (freq<=0) return;
-      const sec = frames/60;
-      tone(freq, sec*1.7, "triangle", 0.05);   // melody
-      tone(freq/2, sec*1.5, "sine", 0.03);      // soft bass octave
+    let musicOn=false, mIdx=0, mWait=0, MELODY = THEMES.peter.notes;
+    const midiHz = (n) => 440 * Math.pow(2, (n-69)/12);
+    function setTheme(name){ if (THEMES[name]){ MELODY = THEMES[name].notes; mIdx=0; mWait=0; } }
+    function musicNote(midi, frames){
+      if (midi <= 0) return;                    // rest
+      const f = midiHz(midi), sec = frames/60;
+      tone(f, sec*1.7, "triangle", 0.05);       // melody voice
+      tone(f/2, sec*1.5, "sine", 0.03);         // soft octave below
     }
     function musicTick(){
       if (!musicOn || muted) return;
       if (mWait-- > 0) return;
-      const [f,fr] = MELODY[mIdx];
-      musicNote(f, fr);
+      const [n, fr] = MELODY[mIdx];
+      musicNote(n, fr);
       mWait = fr; mIdx = (mIdx+1) % MELODY.length;
     }
 
@@ -265,6 +261,7 @@
       },
       musicStop(){ musicOn=false; if (track) try { track.pause(); } catch(e){} },
       musicTick,
+      setTheme,
       usingRealMusic(){ return !!(track && trackOk); },
       toggle(){ muted=!muted; if (track) track.muted = muted; return muted; },
       get muted(){ return muted; }
@@ -900,6 +897,7 @@
     makeLevel(state.round);
     hideModal();
     state.mode = "play";
+    Audio.setTheme(state.type === "rescue" ? "duck" : "peter");  // the level's leitmotif
     Audio.musicStart();
   }
 
