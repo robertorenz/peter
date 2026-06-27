@@ -63,6 +63,7 @@
     text-shadow: 0 1px 3px rgba(0,0,0,.6);
   }
   .pill {
+    display: inline-block;
     background: rgba(20,30,38,.55);
     border: 1px solid rgba(255,255,255,.12);
     backdrop-filter: blur(4px);
@@ -136,8 +137,11 @@
       <canvas id="game" width="900" height="540"></canvas>
 
       <div class="hud">
-        <div class="pill">🍎 Apples <b id="score">0</b> / <span id="total">5</span></div>
-        <div class="pill">Round <b id="round">1</b></div>
+        <div>
+          <span class="pill" id="applePill">🍎 Apples <b id="score">0</b> / <span id="total">5</span></span>
+          <span class="pill" id="rescuePill" style="display:none">🦆 <span id="duckStatus">Reach the duck!</span></span>
+        </div>
+        <div class="pill">Level <b id="round">1</b> · <span id="levelName">The Meadow</span></div>
       </div>
 
       <div class="meter">
@@ -187,6 +191,10 @@
   const roundEl = document.getElementById("round");
   const alertFill = document.getElementById("alertFill");
   const meterLabel = document.getElementById("meterLabel");
+  const applePill = document.getElementById("applePill");
+  const rescuePill = document.getElementById("rescuePill");
+  const duckStatus = document.getElementById("duckStatus");
+  const levelName = document.getElementById("levelName");
 
   // ---- audio (tiny WebAudio, no files) ----
   const Audio = (() => {
@@ -214,6 +222,16 @@
       [N.E5,Q],[N.D5,Q],[N.C5,Q],[N.B4,Q], [N.C5,H2],[N.A4,H2],
       [N.G4,Q],[N.A4,Q],[N.B4,Q],[N.C5,Q], [N.G4,H2],[N.R,H2],
     ];
+    // Real recording: drop a "peter-theme.mp3" in this folder and the game plays it
+    // on loop instead of the synth fallback below.
+    let track = null, trackOk = false;
+    try {
+      track = new window.Audio("peter-theme.mp3");
+      track.loop = true; track.volume = 0.55; track.preload = "auto";
+      track.addEventListener("canplaythrough", () => { trackOk = true; }, { once:true });
+      track.addEventListener("error", () => { trackOk = false; });
+    } catch (e) { track = null; }
+
     let musicOn=false, mIdx=0, mWait=0;
     function musicNote(freq, frames){
       if (freq<=0) return;
@@ -236,10 +254,19 @@
       lose(){ tone(180,0.5,"sawtooth",0.2); tone(120,0.6,"sawtooth",0.18,0.08); },
       growl(){ tone(90,0.25,"sawtooth",0.08); },
       step(){ tone(220,0.05,"sine",0.04); },
-      musicStart(){ ensure(); musicOn=true; mIdx=0; mWait=0; },
-      musicStop(){ musicOn=false; },
+      musicStart(){
+        ensure();
+        if (track && trackOk) {            // play the real recording if present
+          track.muted = muted; musicOn = false;
+          try { track.currentTime = 0; track.play().catch(()=>{}); } catch(e){}
+        } else {                            // otherwise the synth evocation
+          musicOn = true; mIdx = 0; mWait = 0;
+        }
+      },
+      musicStop(){ musicOn=false; if (track) try { track.pause(); } catch(e){} },
       musicTick,
-      toggle(){ muted=!muted; return muted; },
+      usingRealMusic(){ return !!(track && trackOk); },
+      toggle(){ muted=!muted; if (track) track.muted = muted; return muted; },
       get muted(){ return muted; }
     };
   })();
@@ -266,21 +293,36 @@
   // ---- world ----
   const GATE = { x: W - 46, y: H/2, w: 46, h: 150 };
   const rand = (a,b) => a + Math.random()*(b-a);
+  const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+
+  // Levels cycle as you progress; each loop round raises the difficulty.
+  const LEVELS = [
+    { type:"apples", name:"The Meadow",
+      brief:"Gather every apple, then slip home through the <b>gate</b> — or, for a hero's ending, lure the wolf onto the <b>rope by the old oak</b> and press <kbd>Space</kbd>." },
+    { type:"rescue", name:"Rescue the Duck",
+      brief:"The foolish duck has waddled out of the pond and the wolf is coming for her! Get close so she <b>follows you</b>, then lead her back to the <b>safety of the pond</b> before the wolf catches her." },
+  ];
+  const levelIndexFor = (round) => ((round - 1) % LEVELS.length); // 0-based
 
   let trees = [], apples = [], peter, wolf, pond, duck, bird, oak, trap;
-  const state = { mode: "menu", round: 1, score: 0, total: 5, alert: 0, t: 0, flashMsg: "", flashT: 0 };
+  const state = { mode: "menu", round: 1, level: 0, type: "apples",
+                  score: 0, total: 5, alert: 0, t: 0, flashMsg: "", flashT: 0 };
 
   function makeLevel(round) {
-    state.total = 4 + round;          // apples grow each round
+    const idx = levelIndexFor(round);
+    const L = LEVELS[idx];
+    state.level = idx; state.type = L.type;
     state.score = 0; state.alert = 0;
-    totalEl.textContent = state.total;
-    scoreEl.textContent = 0;
-    roundEl.textContent = round;
 
-    // the duck's pond and the old oak with Peter's rope-trap (fixed landmarks)
+    // HUD chrome for this level
+    levelName.textContent = L.name;
+    roundEl.textContent = idx + 1;
+    applePill.style.display  = L.type === "apples" ? "" : "none";
+    rescuePill.style.display = L.type === "rescue" ? "" : "none";
+
+    // fixed landmarks: the duck's pond (the safe haven) and the old oak
     pond = { x: 165, y: H - 96, rx: 80, ry: 40 };
     oak  = { x: Math.round(W*0.6), y: Math.round(H*0.64), r: 42 };
-    trap = { x: oak.x, y: oak.y + 30, r: 26, armed: false };
 
     const clearOfLandmarks = (x, y, pad) =>
       Math.hypot(x-pond.x, y-pond.y) > pond.rx + pad &&
@@ -300,24 +342,45 @@
       trees.push({ x: tx, y: ty, r: 30, sway: rand(0, Math.PI*2) });
     }
 
-    // apples scattered (not in the water)
-    apples = [];
-    for (let i = 0; i < state.total; i++) {
-      let ax, ay, ok, tries = 0;
-      do {
-        ax = rand(70, W - 90); ay = rand(90, H - 50); ok = true;
-        for (const t of trees) if (Math.hypot(ax-t.x, ay-t.y) < 46) ok = false;
-        for (const a of apples) if (Math.hypot(ax-a.x, ay-a.y) < 60) ok = false;
-        if (!clearOfLandmarks(ax, ay, 30)) ok = false;
-      } while (!ok && ++tries < 60);
-      apples.push({ x: ax, y: ay, got: false, bob: rand(0,Math.PI*2) });
-    }
-
     peter = { x: 70, y: H/2, r: 13, face: 1, step: 0 };
-    wolf  = { x: W*0.55, y: 80, r: 18, vx: 0, vy: 0, face: 1, mode:"patrol",
-              tx: W*0.55, ty: 80, step:0, growlCd: 0, speedBase: 1.5 + round*0.12 };
-    duck  = { ang: 0, dive: 0 };                       // swims in the pond, dives when the wolf nears
-    bird  = { x: peter.x+30, y: peter.y-44, vx:0, vy:0, flutter: 0 };  // Peter's friend, harries the wolf
+    bird  = { x: 100, y: H/2-44, vx:0, vy:0, flutter: 0 };  // Peter's friend, harries the wolf
+
+    if (L.type === "apples") {
+      // ---- Level: gather apples, escape or trap the wolf ----
+      state.total = 4 + round;
+      totalEl.textContent = state.total;
+      scoreEl.textContent = 0;
+      trap = { x: oak.x, y: oak.y + 30, r: 26, armed: false };
+
+      apples = [];
+      for (let i = 0; i < state.total; i++) {
+        let ax, ay, ok, tries = 0;
+        do {
+          ax = rand(70, W - 90); ay = rand(90, H - 50); ok = true;
+          for (const t of trees) if (Math.hypot(ax-t.x, ay-t.y) < 46) ok = false;
+          for (const a of apples) if (Math.hypot(ax-a.x, ay-a.y) < 60) ok = false;
+          if (!clearOfLandmarks(ax, ay, 30)) ok = false;
+        } while (!ok && ++tries < 60);
+        apples.push({ x: ax, y: ay, got: false, bob: rand(0,Math.PI*2) });
+      }
+
+      wolf = { x: W*0.55, y: 80, r: 18, vx: 0, vy: 0, face: 1, mode:"patrol",
+               tx: W*0.55, ty: 80, step:0, growlCd: 0, speedBase: 1.5 + round*0.12 };
+      duck = { mode:"swim", ang: rand(0,Math.PI*2), dive: 0, x: pond.x, y: pond.y, face: 1 };
+
+    } else {
+      // ---- Level: rescue the duck before the wolf eats her ----
+      apples = [];
+      trap = null;                         // no rope-trap this level
+      duckStatus.textContent = "Reach the duck!";
+
+      // the duck has wandered onto dry land, far from the pond's safety
+      duck = { mode:"land", x: rand(W*0.5, W*0.66), y: rand(H*0.4, H*0.62),
+               vx:0, vy:0, face:-1, following:false, safe:false, eaten:false, panic:0 };
+      // the wolf starts up high, already stalking toward the duck
+      wolf = { x: W*0.75, y: 90, r: 18, vx: 0, vy: 0, face: -1, mode:"hunt",
+               tx: duck.x, ty: duck.y, step:0, growlCd: 0, speedBase: 1.45 + round*0.10 };
+    }
   }
 
   // ---- helpers ----
@@ -327,42 +390,44 @@
   }
   function flash(msg) { state.flashMsg = msg; state.flashT = 90; }
 
+  // shared wolf physics: ease toward a target at the given speed
+  function stepWolf(tx, ty, speed) {
+    let wdx = tx - wolf.x, wdy = ty - wolf.y;
+    const wm = Math.hypot(wdx,wdy) || 1; wdx/=wm; wdy/=wm;
+    wolf.vx += (wdx*speed - wolf.vx)*0.12;
+    wolf.vy += (wdy*speed - wolf.vy)*0.12;
+    wolf.x = clamp(wolf.x + wolf.vx, wolf.r, W-wolf.r);
+    wolf.y = clamp(wolf.y + wolf.vy, wolf.r+40, H-wolf.r-8);
+    if (Math.abs(wolf.vx) > 0.1) wolf.face = wolf.vx>0?1:-1;
+    wolf.step += (Math.abs(wolf.vx)+Math.abs(wolf.vy))*0.05;
+  }
+  // the bird, when close, harries the wolf and slows it
+  const birdSlow = () => Math.hypot(bird.x-wolf.x, bird.y-wolf.y) < 78 ? 0.45 : 1;
+
   // ---- update ----
   function update() {
     state.t++;
     Audio.musicTick();
     if (state.flashT > 0) state.flashT--;
 
-    // Peter movement
+    // Peter movement (common to all levels)
     const sneaking = keys.sneak;
     const spd = sneaking ? 1.7 : 3.1;
     let dx = (keys.right?1:0) - (keys.left?1:0);
     let dy = (keys.down?1:0) - (keys.up?1:0);
-    if (dx || dy) {
+    const moving = !!(dx || dy);
+    if (moving) {
       const m = Math.hypot(dx,dy) || 1; dx/=m; dy/=m;
       peter.x += dx*spd; peter.y += dy*spd;
       peter.step += spd*0.06;
       if (dx) peter.face = dx>0?1:-1;
       if (!sneaking && state.t % 16 === 0) Audio.step();
     }
-    peter.x = Math.max(peter.r, Math.min(W - peter.r, peter.x));
-    peter.y = Math.max(peter.r+40, Math.min(H - peter.r-8, peter.y));
+    peter.x = clamp(peter.x, peter.r, W - peter.r);
+    peter.y = clamp(peter.y, peter.r+40, H - peter.r-8);
 
-    // apples
-    for (const a of apples) {
-      if (!a.got && Math.hypot(peter.x-a.x, peter.y-a.y) < peter.r + 12) {
-        a.got = true; state.score++; scoreEl.textContent = state.score;
-        Audio.pickup(); flash("🍎 +1");
-      }
-    }
-    // arm the rope-trap once every apple is gathered
-    if (!trap.armed && state.score >= state.total) {
-      trap.armed = true;
-      flash("All apples! Lure the wolf onto the rope by the oak (SPACE) — or flee home 🏡");
-    }
-
-    // ----- the bird: hovers near Peter, dive-bombs the wolf when it hunts -----
-    const birdTargetsWolf = wolf && wolf.mode === "hunt";
+    // the bird hovers near Peter, but dive-bombs the wolf whenever it hunts
+    const birdTargetsWolf = wolf.mode === "hunt";
     const bwx = birdTargetsWolf ? wolf.x : peter.x - 22*peter.face;
     const bwy = birdTargetsWolf ? wolf.y - 12 : peter.y - 46;
     bird.vx += (bwx - bird.x)*0.025; bird.vy += (bwy - bird.y)*0.025;
@@ -370,23 +435,38 @@
     bird.x += bird.vx; bird.y += bird.vy;
     bird.flutter += 0.45;
 
-    // ----- the duck: swims a slow circle, dives when the wolf prowls near -----
-    duck.ang += 0.012;
-    const wolfNearPond = Math.hypot(wolf.x-pond.x, wolf.y-pond.y) < pond.rx + 36;
-    duck.dive = Math.max(0, Math.min(1, duck.dive + (wolfNearPond ? 0.05 : -0.04)));
+    if (state.type === "apples") updateApples(moving, sneaking);
+    else updateRescue();
+  }
 
-    // ----- wolf AI -----
+  // ===== Level: gather apples, escape through the gate, or trap the wolf =====
+  function updateApples(moving, sneaking) {
+    for (const a of apples) {
+      if (!a.got && Math.hypot(peter.x-a.x, peter.y-a.y) < peter.r + 12) {
+        a.got = true; state.score++; scoreEl.textContent = state.score;
+        Audio.pickup(); flash("🍎 +1");
+      }
+    }
+    if (!trap.armed && state.score >= state.total) {
+      trap.armed = true;
+      flash("All apples! Lure the wolf onto the rope by the oak (SPACE) — or flee home 🏡");
+    }
+
+    // the duck swims a slow circle, diving when the wolf prowls near
+    duck.ang += 0.012;
+    duck.x = pond.x + Math.cos(duck.ang)*pond.rx*0.55;
+    duck.y = pond.y + Math.sin(duck.ang)*pond.ry*0.5;
+    duck.face = Math.cos(duck.ang) >= 0 ? 1 : -1;
+    const wolfNearPond = Math.hypot(wolf.x-pond.x, wolf.y-pond.y) < pond.rx + 36;
+    duck.dive = clamp(duck.dive + (wolfNearPond ? 0.05 : -0.04), 0, 1);
+
+    // wolf senses Peter by sight (unless hidden) and by sound (running close)
     const dist = Math.hypot(peter.x - wolf.x, peter.y - wolf.y);
     const hidden = !!nearestTreeCover(peter.x, peter.y);
-    // how loud is Peter? running close = loud
-    const moving = (dx||dy);
-    let noise = 0;
-    if (moving) noise = sneaking ? 0.45 : 1.2;
-    // sight: wolf sees Peter within a radius unless hidden
+    const noise = moving ? (sneaking ? 0.45 : 1.2) : 0;
     const sightR = 190 + state.round*8;
     const canSee = !hidden && dist < sightR;
     const canHear = dist < 150 && noise > 0;
-
     if (canSee || canHear) {
       state.alert = Math.min(100, state.alert + (canSee?2.4:1.4) + noise*0.6);
       wolf.mode = "hunt";
@@ -395,55 +475,76 @@
       if (state.alert < 30 && wolf.mode === "hunt") wolf.mode = "patrol";
     }
 
-    // movement target
     if (wolf.mode === "hunt") {
       wolf.tx = peter.x; wolf.ty = peter.y;
       if (wolf.growlCd <= 0) { Audio.growl(); wolf.growlCd = 70; }
-    } else {
-      // patrol: wander, occasionally pick a new point
-      if (Math.hypot(wolf.tx-wolf.x, wolf.ty-wolf.y) < 24 || state.t % 140 === 0) {
-        wolf.tx = rand(120, W-120); wolf.ty = rand(90, H-60);
-      }
+    } else if (Math.hypot(wolf.tx-wolf.x, wolf.ty-wolf.y) < 24 || state.t % 140 === 0) {
+      wolf.tx = rand(120, W-120); wolf.ty = rand(90, H-60);
     }
     if (wolf.growlCd > 0) wolf.growlCd--;
 
-    // the little bird harries the wolf from above — it loses focus and slows
-    const birdDist = Math.hypot(bird.x - wolf.x, bird.y - wolf.y);
-    let wolfSlow = 1;
-    if (birdDist < 78) {
+    const slow = birdSlow();
+    if (slow < 1) {
       state.alert = Math.max(0, state.alert - 3);
-      wolfSlow = 0.45;
       if (state.alert < 25 && wolf.mode === "hunt") wolf.mode = "patrol";
     }
+    stepWolf(wolf.tx, wolf.ty, wolf.speedBase * (wolf.mode==="hunt" ? 1.55 : 0.8) * slow);
 
-    const huntSpeed = wolf.speedBase * (wolf.mode==="hunt" ? 1.55 : 0.8) * wolfSlow;
-    let wdx = wolf.tx - wolf.x, wdy = wolf.ty - wolf.y;
-    const wm = Math.hypot(wdx,wdy) || 1; wdx/=wm; wdy/=wm;
-    wolf.vx += (wdx*huntSpeed - wolf.vx)*0.12;
-    wolf.vy += (wdy*huntSpeed - wolf.vy)*0.12;
-    wolf.x += wolf.vx; wolf.y += wolf.vy;
-    wolf.x = Math.max(wolf.r, Math.min(W-wolf.r, wolf.x));
-    wolf.y = Math.max(wolf.r+40, Math.min(H-wolf.r-8, wolf.y));
-    if (Math.abs(wolf.vx) > 0.1) wolf.face = wolf.vx>0?1:-1;
-    wolf.step += (Math.abs(wolf.vx)+Math.abs(wolf.vy))*0.05;
-
-    // caught?
     if (dist < peter.r + wolf.r - 4) return lose();
     if (state.alert >= 100) return lose();
 
-    // escaped through gate with all apples?
     const allApples = state.score >= state.total;
     const atGate = peter.x > GATE.x - 30 && Math.abs(peter.y - GATE.y) < GATE.h/2;
-    if (atGate) {
-      if (allApples) return win();
-      else flash("Gather every apple first!");
-    }
+    if (atGate) { if (allApples) return win(); else flash("Gather every apple first!"); }
 
-    // meter UI
     alertFill.style.width = state.alert + "%";
     meterLabel.textContent = wolf.mode === "hunt"
       ? "⚠ The wolf has your scent!"
       : (state.alert > 8 ? "The wolf grows curious…" : "The wolf's suspicion");
+  }
+
+  // ===== Level: reach the duck so she follows, then lead her to the pond =====
+  function updateRescue() {
+    // -- the duck --
+    if (!duck.safe && !duck.eaten) {
+      if (Math.hypot(duck.x-pond.x, duck.y-pond.y) < pond.rx - 4) {
+        duck.safe = true; flash("🦆 Safe in the pond!");
+      } else {
+        const dPeter = Math.hypot(duck.x-peter.x, duck.y-peter.y);
+        const dWolf  = Math.hypot(duck.x-wolf.x,  duck.y-wolf.y);
+        if (dPeter < 56) duck.following = true;
+        let tx, ty, dspd = 0;
+        if (duck.following) { tx = peter.x - 22*peter.face; ty = peter.y + 10; dspd = 2.55; duck.panic = 0; }
+        else if (dWolf < 150) { tx = duck.x*2 - wolf.x; ty = duck.y*2 - wolf.y; dspd = 2.2; duck.panic = 1; }
+        else { duck.panic = 0; }
+        if (dspd > 0) {
+          let ddx = tx-duck.x, ddy = ty-duck.y; const m = Math.hypot(ddx,ddy)||1; ddx/=m; ddy/=m;
+          duck.vx += (ddx*dspd - duck.vx)*0.14; duck.vy += (ddy*dspd - duck.vy)*0.14;
+        } else { duck.vx *= 0.8; duck.vy *= 0.8; }
+        duck.x = clamp(duck.x + duck.vx, 16, W-16);
+        duck.y = clamp(duck.y + duck.vy, 56, H-14);
+        if (Math.abs(duck.vx) > 0.1) duck.face = duck.vx>0?1:-1;
+      }
+    }
+    duck.dive = 0;
+
+    // -- the wolf hunts the duck --
+    if (!duck.safe) {
+      wolf.tx = duck.x; wolf.ty = duck.y;
+      if (wolf.growlCd <= 0) { Audio.growl(); wolf.growlCd = 70; }
+    }
+    if (wolf.growlCd > 0) wolf.growlCd--;
+    stepWolf(wolf.tx, wolf.ty, wolf.speedBase * 1.4 * birdSlow() * (duck.safe ? 0.4 : 1));
+
+    if (!duck.safe && Math.hypot(wolf.x-duck.x, wolf.y-duck.y) < wolf.r + 9) { duck.eaten = true; return lose(); }
+    if (duck.safe) return winRescue();
+
+    // -- danger meter + status --
+    const dw = Math.hypot(wolf.x-duck.x, wolf.y-duck.y);
+    state.alert = clamp(100 - (dw-30)/2.1, 0, 100);
+    alertFill.style.width = state.alert + "%";
+    meterLabel.textContent = state.alert > 70 ? "⚠ The wolf is upon the duck!" : "Danger to the duck";
+    duckStatus.textContent = duck.following ? "Following — lead her to the pond!" : "Reach the duck so she follows!";
   }
 
   // ================= DRAWING =================
@@ -471,13 +572,24 @@
     }
     ctx.globalAlpha = 1;
 
-    // pond & duck (on the ground)
+    // pond (the safe haven)
     drawPond(pond);
+    // in the rescue level, mark the pond as the goal
+    if (state.type === "rescue" && duck && !duck.safe) {
+      ctx.save();
+      ctx.globalAlpha = 0.30 + Math.sin(state.t*0.08)*0.12;
+      ctx.strokeStyle = "#ffe8a8"; ctx.lineWidth = 3; ctx.setLineDash([7,7]);
+      ctx.beginPath(); ctx.ellipse(pond.x, pond.y, pond.rx+10, pond.ry+8, 0, 0, 7); ctx.stroke();
+      ctx.restore();
+      ctx.save(); ctx.globalAlpha = 0.85; ctx.fillStyle = "#fff7e0";
+      ctx.font = "bold 12px Segoe UI"; ctx.textAlign = "center";
+      ctx.fillText("safety ▾", pond.x, pond.y - pond.ry - 12); ctx.restore();
+    }
 
     // gate (home)
     drawGate();
 
-    // the rope-trap coil on the ground
+    // the rope-trap coil on the ground (apples level only)
     drawTrap(trap);
 
     // apples
@@ -487,6 +599,7 @@
     const ents = [
       ...trees.map(t => ({y:t.y, d:()=>drawTree(t)})),
       {y:oak.y,   d:()=>drawOak(oak)},
+      {y:duck.y,  d:()=>drawDuck()},
       {y:peter.y, d:()=>drawPeter(peter)},
       {y:wolf.y,  d:()=>drawWolf(wolf)},
     ].sort((a,b)=>a.y-b.y);
@@ -674,28 +787,42 @@
       ctx.beginPath(); ctx.ellipse(p.x, p.y, rr*0.9+6, rr*0.5+3, 0, 0, 7); ctx.stroke();
     }
     ctx.globalAlpha = 1; ctx.restore();
-    drawDuck(p);
   }
 
-  function drawDuck(p) {
-    const dx = p.x + Math.cos(duck.ang)*p.rx*0.55;
-    const dy = p.y + Math.sin(duck.ang)*p.ry*0.5;
+  function drawDuck() {
+    const onLand = state.type === "rescue";
     const sink = duck.dive*9;
-    ctx.save(); ctx.translate(dx, dy);
-    ctx.scale(Math.cos(duck.ang) >= 0 ? 1 : -1, 1);
-    // wake
-    ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(-10,4); ctx.lineTo(-22,1);
-    ctx.moveTo(-10,7); ctx.lineTo(-20,9); ctx.stroke();
+    if (duck.eaten) return;               // gone — the wolf got her
+    if (onLand) drawShadow(duck.x, duck.y+9, 11);
+    ctx.save(); ctx.translate(duck.x, duck.y);
+    ctx.scale(duck.face >= 0 ? 1 : -1, 1);
+    if (!onLand) {                        // water wake while swimming
+      ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(-10,4); ctx.lineTo(-22,1);
+      ctx.moveTo(-10,7); ctx.lineTo(-20,9); ctx.stroke();
+    }
     ctx.globalAlpha = 1 - duck.dive*0.75;
+    const waddle = onLand ? Math.sin(state.t*0.25)*1.5*(Math.abs(duck.vx||0)+Math.abs(duck.vy||0) > 0.3 ? 1 : 0) : 0;
     ctx.fillStyle = "#f4f1e8";
-    ctx.beginPath(); ctx.ellipse(0, 2+sink, 11, 7, 0, 0, 7); ctx.fill();         // body
+    ctx.beginPath(); ctx.ellipse(0, 2+sink+waddle, 11, 7, 0, 0, 7); ctx.fill();   // body
     ctx.beginPath(); ctx.moveTo(-9,sink); ctx.lineTo(-16,-3+sink); ctx.lineTo(-9,4+sink); ctx.fill(); // tail
     ctx.beginPath(); ctx.arc(8,-5+sink,5,0,7); ctx.fill();                        // head
+    if (onLand) {                         // orange legs on dry land
+      ctx.strokeStyle = "#e6a23c"; ctx.lineWidth = 2; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(-1,8); ctx.lineTo(-1-waddle,13); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(3,8);  ctx.lineTo(3+waddle,13);  ctx.stroke();
+    }
     ctx.fillStyle = "#e6a23c";
     ctx.beginPath(); ctx.moveTo(12,-6+sink); ctx.lineTo(19,-4+sink); ctx.lineTo(12,-2+sink); ctx.fill(); // bill
     ctx.fillStyle = "#26303a"; ctx.beginPath(); ctx.arc(9,-6+sink,1.1,0,7); ctx.fill();  // eye
     ctx.restore(); ctx.globalAlpha = 1;
+    // rescue mood indicator
+    if (onLand && !duck.safe) {
+      ctx.save(); ctx.textAlign = "center"; ctx.font = "13px Segoe UI";
+      if (duck.following) { ctx.fillStyle = "#e35d6a"; ctx.fillText("♥", duck.x, duck.y-14); }
+      else if (duck.panic) { ctx.fillStyle = "#c43d2e"; ctx.font = "bold 15px Segoe UI"; ctx.fillText("!", duck.x, duck.y-14); }
+      ctx.restore();
+    }
   }
 
   function drawOak(o) {
@@ -717,6 +844,7 @@
   }
 
   function drawTrap(tr) {
+    if (!tr) return;                       // no trap in the rescue level
     ctx.save();
     if (tr.armed) {   // rope drops from the oak branch
       ctx.strokeStyle = "#caa15a"; ctx.lineWidth = 2.5;
@@ -783,36 +911,47 @@
     else if (peterNear) flash("Lure the wolf onto the rope, then press SPACE!");
   }
 
-  function winCapture() {
-    state.mode = "won"; Audio.musicStop(); Audio.capture();
-    const next = state.round + 1;
-    showModal("Peter caught the wolf! 🎉",
-      `With a loop of rope from the old oak, Peter caught the wolf by the tail — just like in the story! ` +
-      `The hunters came marching out of the forest, and Peter led the grand parade. 🎺` +
-      `<br><br>A true hero's ending. Onward to round ${next}?`,
-      "Next round ▶");
-    startBtn.onclick = () => { state.round = next; startRound(); };
+  function setCrest(emoji){ const c = document.querySelector(".modal .crest"); if (c) c.textContent = emoji; }
+
+  // win → preview & start the next level (levels cycle, difficulty rises)
+  function advance(crest, title, story, sound) {
+    state.mode = "won"; Audio.musicStop();
+    (sound === "capture" ? Audio.capture : Audio.win)();
+    const nx = LEVELS[levelIndexFor(state.round + 1)];
+    setCrest(crest);
+    showModal(title, `${story}<br><br><b>Next — ${nx.name}:</b> ${nx.brief}`, `Begin: ${nx.name} ▶`);
+    startBtn.onclick = () => { state.round++; startRound(); };
   }
 
-  function win() {
-    state.mode = "won";
-    Audio.musicStop(); Audio.win();
-    const next = state.round + 1;
-    showModal("Safe at home! 🏡",
-      `Peter slipped through the gate with <b>all ${state.total} apples</b> — the wolf never caught him.` +
-      `<br><br>Braver still: trap the wolf at the oak for a hero's ending. ` +
-      `Ready for a wilder meadow? Round ${next} adds more apples and a hungrier wolf.`,
-      "Next round ▶");
-    startBtn.onclick = () => { state.round = next; startRound(); };
+  function win() {        // escaped through the gate (apples level)
+    advance("🏡", "Safe at home! 🏡",
+      `Peter slipped through the gate with <b>all ${state.total} apples</b> — the wolf never caught him.`, "win");
+  }
+  function winCapture() { // trapped the wolf (apples level, hero's ending)
+    advance("🎉", "Peter caught the wolf! 🎉",
+      `With a loop of rope from the old oak, Peter caught the wolf by the tail — just like in the story! ` +
+      `The hunters came marching out of the forest, and Peter led the grand parade. 🎺`, "capture");
+  }
+  function winRescue() {  // led the duck to safety (rescue level)
+    advance("🦆", "The duck is safe! 🦆",
+      `Peter reached the duck just in time and led her back to the pond — the wolf snapped at empty air. A brave rescue!`, "win");
   }
 
   function lose() {
     state.mode = "lost";
     Audio.musicStop(); Audio.lose();
-    showModal("The wolf caught Peter! 🐺",
-      `So sharp were the wolf's senses that it found Peter among the grass.` +
-      `<br><br>Don't worry — in this tale, everyone gets another chance. Move softly and use the trees as cover.`,
-      "Try again ↺");
+    setCrest("🐺");
+    if (state.type === "rescue" && duck && duck.eaten) {
+      showModal("The wolf ate the duck! 🐺",
+        `The wolf reached the poor duck before she could waddle to safety. ` +
+        `Get to her sooner next time so she follows you, and let the bird slow the wolf down.`,
+        "Try again ↺");
+    } else {
+      showModal("The wolf caught Peter! 🐺",
+        `So sharp were the wolf's senses that it found Peter among the grass.` +
+        `<br><br>Don't worry — in this tale, everyone gets another chance. Move softly and use the trees as cover.`,
+        "Try again ↺");
+    }
     startBtn.onclick = () => { startRound(); };
   }
 
