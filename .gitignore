@@ -9,3 +9,10 @@ peter-theme.mp3
 tools/themes_js.json
 tools/themes_inline.js
 __pycache__/
+
+# OMR intermediates (heavy / regenerable) — keep omr/mid + themes/*.mid
+omr/pages/
+omr/xml/
+omr/*.log
+omr/progress.log
+*.omr

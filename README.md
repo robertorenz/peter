@@ -61,6 +61,28 @@ orchestration) and are easy to edit. Regenerate them with:
 python tools/make_themes.py
 ```
 
+## 🎻 Full-score OMR transcription
+
+The leitmotifs above are only the short motifs. To transcribe the **whole orchestral
+score**, the full IMSLP PDF was run through real Optical Music Recognition:
+
+```
+Audiveris (PDF page -> MusicXML)  ->  music21 (MusicXML -> MIDI)  ->  merge
+   tools/run_omr.ps1                    tools/build_full_midi.py
+```
+
+Outputs:
+- `omr/mid/p_NN.mid` — one multi-track MIDI per score page (each recognised staff = a track).
+- `themes/PeterAndTheWolf_FULL.mid` — all pages concatenated into one ~17-minute,
+  15-channel orchestral MIDI.
+
+**Honest limitations:** Audiveris recognised **48 of 76 pages** (dense pages with
+crescendo "wedges" trip its MusicXML exporter); it does **not** label instruments, so
+parts are by staff position, and OMR on a 14-stave score makes pitch/rhythm errors.
+So this is a **rough machine transcription of the whole work**, not a clean edition —
+useful as a draft to listen to and correct, not a finished score. Regenerate the merge
+with `python tools/build_full_midi.py`.
+
 ## 🐺 The wolf
 
 The wolf has two moods:
