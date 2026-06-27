@@ -150,14 +150,16 @@
           <div class="crest">🐺</div>
           <h2 id="mTitle">Peter and the Wolf</h2>
           <p id="mBody">
-            Early one morning, Peter opened the gate and walked into the great green meadow…
-            but a wolf is prowling. Gather all the apples and slip back to the
-            <b>gate</b> on the right without being caught.
+            Early one morning, Peter opened the gate and walked into the great green meadow.
+            His friend the <b>🐦 bird</b> flutters along, the <b>🦆 duck</b> paddles in the pond —
+            but a <b>wolf</b> is prowling. Gather every apple, then either slip home through the
+            <b>gate</b> or, for a hero's ending, lure the wolf onto the <b>rope by the old oak</b>.
           </p>
           <p class="keys">
             Move with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or the
             <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> arrows.
-            Hold <kbd>Shift</kbd> to tip-toe quietly. Hide behind <b>trees</b>.
+            <kbd>Shift</kbd> to tip-toe · <kbd>Space</kbd> to spring the trap.
+            Hide behind <b>trees</b>; the bird will harry the wolf when it gives chase.
           </p>
           <button class="btn" id="startBtn">Begin the tale</button>
           <div class="foot">Tip: the wolf hears you more when you run. Move softly when it's near.</div>
@@ -201,12 +203,42 @@
       o.connect(g); g.connect(a.destination);
       o.start(t); o.stop(t + dur + 0.02);
     }
+
+    // --- looping background melody (a jaunty, Peter-ish string tune) ---
+    const N = {C4:261.63,D4:293.66,E4:329.63,F4:349.23,G4:392.00,A4:440.00,
+               B4:493.88,C5:523.25,D5:587.33,E5:659.25,R:0};
+    const Q=20, H2=40;
+    const MELODY = [
+      [N.G4,Q],[N.A4,Q],[N.G4,Q],[N.E4,Q], [N.G4,H2],[N.C5,H2],
+      [N.B4,Q],[N.A4,Q],[N.G4,Q],[N.A4,Q], [N.G4,H2],[N.R,Q],
+      [N.E5,Q],[N.D5,Q],[N.C5,Q],[N.B4,Q], [N.C5,H2],[N.A4,H2],
+      [N.G4,Q],[N.A4,Q],[N.B4,Q],[N.C5,Q], [N.G4,H2],[N.R,H2],
+    ];
+    let musicOn=false, mIdx=0, mWait=0;
+    function musicNote(freq, frames){
+      if (freq<=0) return;
+      const sec = frames/60;
+      tone(freq, sec*1.7, "triangle", 0.05);   // melody
+      tone(freq/2, sec*1.5, "sine", 0.03);      // soft bass octave
+    }
+    function musicTick(){
+      if (!musicOn || muted) return;
+      if (mWait-- > 0) return;
+      const [f,fr] = MELODY[mIdx];
+      musicNote(f, fr);
+      mWait = fr; mIdx = (mIdx+1) % MELODY.length;
+    }
+
     return {
       pickup(){ tone(660,0.12,"triangle",0.18); tone(990,0.12,"triangle",0.14,0.08); },
       win(){ [523,659,784,1046].forEach((f,i)=>tone(f,0.3,"triangle",0.16,i*0.12)); },
+      capture(){ [523,659,784,1046,784,1046,1318,1046].forEach((f,i)=>tone(f,0.34,"triangle",0.17,i*0.13)); },
       lose(){ tone(180,0.5,"sawtooth",0.2); tone(120,0.6,"sawtooth",0.18,0.08); },
       growl(){ tone(90,0.25,"sawtooth",0.08); },
       step(){ tone(220,0.05,"sine",0.04); },
+      musicStart(){ ensure(); musicOn=true; mIdx=0; mWait=0; },
+      musicStop(){ musicOn=false; },
+      musicTick,
       toggle(){ muted=!muted; return muted; },
       get muted(){ return muted; }
     };
@@ -219,6 +251,7 @@
   addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
     if (KEYMAP[k]) { keys[KEYMAP[k]] = true; e.preventDefault(); }
+    if (k === " ") { e.preventDefault(); tryTrap(); }
     if (k === "shift") keys.sneak = true;
     if (k === "p" && state.mode === "play") togglePause();
     else if (k === "p" && state.mode === "pause") togglePause();
@@ -234,7 +267,7 @@
   const GATE = { x: W - 46, y: H/2, w: 46, h: 150 };
   const rand = (a,b) => a + Math.random()*(b-a);
 
-  let trees = [], apples = [], peter, wolf;
+  let trees = [], apples = [], peter, wolf, pond, duck, bird, oak, trap;
   const state = { mode: "menu", round: 1, score: 0, total: 5, alert: 0, t: 0, flashMsg: "", flashT: 0 };
 
   function makeLevel(round) {
@@ -244,7 +277,16 @@
     scoreEl.textContent = 0;
     roundEl.textContent = round;
 
-    // trees as cover, kept away from edges & gate
+    // the duck's pond and the old oak with Peter's rope-trap (fixed landmarks)
+    pond = { x: 165, y: H - 96, rx: 80, ry: 40 };
+    oak  = { x: Math.round(W*0.6), y: Math.round(H*0.64), r: 42 };
+    trap = { x: oak.x, y: oak.y + 30, r: 26, armed: false };
+
+    const clearOfLandmarks = (x, y, pad) =>
+      Math.hypot(x-pond.x, y-pond.y) > pond.rx + pad &&
+      Math.hypot(x-oak.x,  y-oak.y)  > oak.r  + pad;
+
+    // trees as cover, kept away from edges, gate, pond & oak
     trees = [];
     const treeCount = 5 + Math.min(round, 4);
     for (let i = 0; i < treeCount; i++) {
@@ -253,11 +295,12 @@
         tx = rand(90, W - 130); ty = rand(120, H - 70); ok = true;
         for (const o of trees) if (Math.hypot(tx-o.x, ty-o.y) < 120) ok = false;
         if (Math.abs(tx - GATE.x) < 140) ok = false;
-      } while (!ok && ++tries < 40);
+        if (!clearOfLandmarks(tx, ty, 70)) ok = false;
+      } while (!ok && ++tries < 50);
       trees.push({ x: tx, y: ty, r: 30, sway: rand(0, Math.PI*2) });
     }
 
-    // apples scattered
+    // apples scattered (not in the water)
     apples = [];
     for (let i = 0; i < state.total; i++) {
       let ax, ay, ok, tries = 0;
@@ -265,13 +308,16 @@
         ax = rand(70, W - 90); ay = rand(90, H - 50); ok = true;
         for (const t of trees) if (Math.hypot(ax-t.x, ay-t.y) < 46) ok = false;
         for (const a of apples) if (Math.hypot(ax-a.x, ay-a.y) < 60) ok = false;
-      } while (!ok && ++tries < 50);
+        if (!clearOfLandmarks(ax, ay, 30)) ok = false;
+      } while (!ok && ++tries < 60);
       apples.push({ x: ax, y: ay, got: false, bob: rand(0,Math.PI*2) });
     }
 
     peter = { x: 70, y: H/2, r: 13, face: 1, step: 0 };
     wolf  = { x: W*0.55, y: 80, r: 18, vx: 0, vy: 0, face: 1, mode:"patrol",
               tx: W*0.55, ty: 80, step:0, growlCd: 0, speedBase: 1.5 + round*0.12 };
+    duck  = { ang: 0, dive: 0 };                       // swims in the pond, dives when the wolf nears
+    bird  = { x: peter.x+30, y: peter.y-44, vx:0, vy:0, flutter: 0 };  // Peter's friend, harries the wolf
   }
 
   // ---- helpers ----
@@ -284,6 +330,7 @@
   // ---- update ----
   function update() {
     state.t++;
+    Audio.musicTick();
     if (state.flashT > 0) state.flashT--;
 
     // Peter movement
@@ -308,6 +355,25 @@
         Audio.pickup(); flash("🍎 +1");
       }
     }
+    // arm the rope-trap once every apple is gathered
+    if (!trap.armed && state.score >= state.total) {
+      trap.armed = true;
+      flash("All apples! Lure the wolf onto the rope by the oak (SPACE) — or flee home 🏡");
+    }
+
+    // ----- the bird: hovers near Peter, dive-bombs the wolf when it hunts -----
+    const birdTargetsWolf = wolf && wolf.mode === "hunt";
+    const bwx = birdTargetsWolf ? wolf.x : peter.x - 22*peter.face;
+    const bwy = birdTargetsWolf ? wolf.y - 12 : peter.y - 46;
+    bird.vx += (bwx - bird.x)*0.025; bird.vy += (bwy - bird.y)*0.025;
+    bird.vx *= 0.9; bird.vy *= 0.9;
+    bird.x += bird.vx; bird.y += bird.vy;
+    bird.flutter += 0.45;
+
+    // ----- the duck: swims a slow circle, dives when the wolf prowls near -----
+    duck.ang += 0.012;
+    const wolfNearPond = Math.hypot(wolf.x-pond.x, wolf.y-pond.y) < pond.rx + 36;
+    duck.dive = Math.max(0, Math.min(1, duck.dive + (wolfNearPond ? 0.05 : -0.04)));
 
     // ----- wolf AI -----
     const dist = Math.hypot(peter.x - wolf.x, peter.y - wolf.y);
@@ -341,7 +407,16 @@
     }
     if (wolf.growlCd > 0) wolf.growlCd--;
 
-    const huntSpeed = wolf.speedBase * (wolf.mode==="hunt" ? 1.55 : 0.8);
+    // the little bird harries the wolf from above — it loses focus and slows
+    const birdDist = Math.hypot(bird.x - wolf.x, bird.y - wolf.y);
+    let wolfSlow = 1;
+    if (birdDist < 78) {
+      state.alert = Math.max(0, state.alert - 3);
+      wolfSlow = 0.45;
+      if (state.alert < 25 && wolf.mode === "hunt") wolf.mode = "patrol";
+    }
+
+    const huntSpeed = wolf.speedBase * (wolf.mode==="hunt" ? 1.55 : 0.8) * wolfSlow;
     let wdx = wolf.tx - wolf.x, wdy = wolf.ty - wolf.y;
     const wm = Math.hypot(wdx,wdy) || 1; wdx/=wm; wdy/=wm;
     wolf.vx += (wdx*huntSpeed - wolf.vx)*0.12;
@@ -396,8 +471,14 @@
     }
     ctx.globalAlpha = 1;
 
+    // pond & duck (on the ground)
+    drawPond(pond);
+
     // gate (home)
     drawGate();
+
+    // the rope-trap coil on the ground
+    drawTrap(trap);
 
     // apples
     for (const a of apples) if (!a.got) drawApple(a);
@@ -405,6 +486,7 @@
     // entities sorted by y for depth
     const ents = [
       ...trees.map(t => ({y:t.y, d:()=>drawTree(t)})),
+      {y:oak.y,   d:()=>drawOak(oak)},
       {y:peter.y, d:()=>drawPeter(peter)},
       {y:wolf.y,  d:()=>drawWolf(wolf)},
     ].sort((a,b)=>a.y-b.y);
@@ -415,6 +497,9 @@
       ctx.save(); ctx.globalAlpha = 0.08; ctx.fillStyle = "#b1543a";
       ctx.beginPath(); ctx.arc(wolf.x, wolf.y, 190, 0, 7); ctx.fill(); ctx.restore();
     }
+
+    // the bird flies above everything
+    drawBird(bird);
 
     // flash message
     if (state.flashT > 0) {
@@ -567,6 +652,106 @@
     ctx.restore();
   }
 
+  function drawPond(p) {
+    ctx.save();
+    ctx.fillStyle = "rgba(20,40,30,.14)";
+    ctx.beginPath(); ctx.ellipse(p.x, p.y+6, p.rx+6, p.ry+4, 0, 0, 7); ctx.fill();
+    const wg = ctx.createRadialGradient(p.x, p.y-8, 8, p.x, p.y, p.rx);
+    wg.addColorStop(0, "#83c8da"); wg.addColorStop(1, "#3f8fa8");
+    ctx.fillStyle = wg;
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, p.rx, p.ry, 0, 0, 7); ctx.fill();
+    // reeds
+    ctx.strokeStyle = "#4f8a45"; ctx.lineWidth = 3; ctx.lineCap = "round";
+    for (const rx of [-p.rx+10, -p.rx+2, p.rx-6]) {
+      ctx.beginPath(); ctx.moveTo(p.x+rx, p.y-p.ry+4);
+      ctx.quadraticCurveTo(p.x+rx-4, p.y-p.ry-12, p.x+rx-2, p.y-p.ry-20); ctx.stroke();
+    }
+    // ripples
+    ctx.strokeStyle = "rgba(255,255,255,.3)"; ctx.lineWidth = 1.5;
+    for (let i=0;i<3;i++){
+      const rr = (state.t*0.4 + i*30) % p.rx;
+      ctx.globalAlpha = 0.4*(1-rr/p.rx);
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, rr*0.9+6, rr*0.5+3, 0, 0, 7); ctx.stroke();
+    }
+    ctx.globalAlpha = 1; ctx.restore();
+    drawDuck(p);
+  }
+
+  function drawDuck(p) {
+    const dx = p.x + Math.cos(duck.ang)*p.rx*0.55;
+    const dy = p.y + Math.sin(duck.ang)*p.ry*0.5;
+    const sink = duck.dive*9;
+    ctx.save(); ctx.translate(dx, dy);
+    ctx.scale(Math.cos(duck.ang) >= 0 ? 1 : -1, 1);
+    // wake
+    ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-10,4); ctx.lineTo(-22,1);
+    ctx.moveTo(-10,7); ctx.lineTo(-20,9); ctx.stroke();
+    ctx.globalAlpha = 1 - duck.dive*0.75;
+    ctx.fillStyle = "#f4f1e8";
+    ctx.beginPath(); ctx.ellipse(0, 2+sink, 11, 7, 0, 0, 7); ctx.fill();         // body
+    ctx.beginPath(); ctx.moveTo(-9,sink); ctx.lineTo(-16,-3+sink); ctx.lineTo(-9,4+sink); ctx.fill(); // tail
+    ctx.beginPath(); ctx.arc(8,-5+sink,5,0,7); ctx.fill();                        // head
+    ctx.fillStyle = "#e6a23c";
+    ctx.beginPath(); ctx.moveTo(12,-6+sink); ctx.lineTo(19,-4+sink); ctx.lineTo(12,-2+sink); ctx.fill(); // bill
+    ctx.fillStyle = "#26303a"; ctx.beginPath(); ctx.arc(9,-6+sink,1.1,0,7); ctx.fill();  // eye
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
+
+  function drawOak(o) {
+    const sway = Math.sin(state.t*0.015)*3;
+    ctx.fillStyle = "rgba(20,30,20,.2)";
+    ctx.beginPath(); ctx.ellipse(o.x, o.y+38, 50, 13, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#6e4824"; ctx.fillRect(o.x-11, o.y-10, 22, 52);
+    // branch the rope hangs from
+    ctx.strokeStyle = "#6e4824"; ctx.lineWidth = 8; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(o.x, o.y-4); ctx.lineTo(o.x+34, o.y-18); ctx.stroke();
+    const greens = ["#356b30","#46823c","#5a9c4e"];
+    greens.forEach((c,i)=>{
+      ctx.fillStyle = c; ctx.beginPath();
+      ctx.arc(o.x-26+sway, o.y-26-i*5, 34-i*4, 0, 7);
+      ctx.arc(o.x+24+sway, o.y-26-i*5, 34-i*4, 0, 7);
+      ctx.arc(o.x+sway,    o.y-48-i*5, 40-i*4, 0, 7);
+      ctx.fill();
+    });
+  }
+
+  function drawTrap(tr) {
+    ctx.save();
+    if (tr.armed) {   // rope drops from the oak branch
+      ctx.strokeStyle = "#caa15a"; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(oak.x+34, oak.y-18); ctx.lineTo(tr.x, tr.y); ctx.stroke();
+      ctx.globalAlpha = 0.22 + Math.sin(state.t*0.12)*0.12;
+      ctx.fillStyle = "#e7c46b";
+      ctx.beginPath(); ctx.ellipse(tr.x, tr.y, tr.r+7, (tr.r+7)*0.5, 0, 0, 7); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    const pulse = tr.armed ? 1 + Math.sin(state.t*0.12)*0.1 : 1;
+    ctx.translate(tr.x, tr.y); ctx.scale(1, 0.5);
+    ctx.strokeStyle = tr.armed ? "#e7c46b" : "#9b8a63";
+    ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0,0,tr.r*pulse,0,7); ctx.stroke();
+    ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(0,0,tr.r*0.66*pulse,0,7); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawBird(b) {
+    const fl = Math.sin(b.flutter)*6;
+    ctx.save(); ctx.translate(b.x, b.y);
+    ctx.scale(b.vx >= 0 ? 1 : -1, 1);
+    ctx.fillStyle = "#3f9bd6";
+    ctx.beginPath(); ctx.ellipse(0,0,7,5,0,0,7); ctx.fill();          // body
+    ctx.fillStyle = "#ffd45e";
+    ctx.beginPath(); ctx.ellipse(-1,2,4,3,0,0,7); ctx.fill();         // belly
+    ctx.fillStyle = "#3f9bd6";
+    ctx.beginPath(); ctx.arc(6,-3,4,0,7); ctx.fill();                 // head
+    ctx.fillStyle = "#e6a23c";
+    ctx.beginPath(); ctx.moveTo(9,-3); ctx.lineTo(14,-2); ctx.lineTo(9,-1); ctx.fill();  // beak
+    ctx.fillStyle = "#1d2530"; ctx.beginPath(); ctx.arc(7,-4,1,0,7); ctx.fill();         // eye
+    ctx.fillStyle = "#2f7db0";
+    ctx.beginPath(); ctx.ellipse(-2,-2-fl*0.4,6,3,-0.5-fl*0.05,0,7); ctx.fill();         // wing
+    ctx.restore();
+  }
+
   // ================= GAME FLOW =================
   let raf = null;
   function loop() {
@@ -587,22 +772,43 @@
     makeLevel(state.round);
     hideModal();
     state.mode = "play";
+    Audio.musicStart();
+  }
+
+  function tryTrap() {
+    if (state.mode !== "play" || !trap || !trap.armed) return;
+    const wolfOnRope  = Math.hypot(wolf.x-trap.x, wolf.y-trap.y) < trap.r + wolf.r;
+    const peterNear   = Math.hypot(peter.x-trap.x, peter.y-trap.y) < 82;
+    if (wolfOnRope && peterNear) winCapture();
+    else if (peterNear) flash("Lure the wolf onto the rope, then press SPACE!");
+  }
+
+  function winCapture() {
+    state.mode = "won"; Audio.musicStop(); Audio.capture();
+    const next = state.round + 1;
+    showModal("Peter caught the wolf! 🎉",
+      `With a loop of rope from the old oak, Peter caught the wolf by the tail — just like in the story! ` +
+      `The hunters came marching out of the forest, and Peter led the grand parade. 🎺` +
+      `<br><br>A true hero's ending. Onward to round ${next}?`,
+      "Next round ▶");
+    startBtn.onclick = () => { state.round = next; startRound(); };
   }
 
   function win() {
     state.mode = "won";
-    Audio.win();
+    Audio.musicStop(); Audio.win();
     const next = state.round + 1;
     showModal("Safe at home! 🏡",
       `Peter slipped through the gate with <b>all ${state.total} apples</b> — the wolf never caught him.` +
-      `<br><br>Ready for a wilder meadow? Round ${next} adds more apples and a hungrier wolf.`,
+      `<br><br>Braver still: trap the wolf at the oak for a hero's ending. ` +
+      `Ready for a wilder meadow? Round ${next} adds more apples and a hungrier wolf.`,
       "Next round ▶");
     startBtn.onclick = () => { state.round = next; startRound(); };
   }
 
   function lose() {
     state.mode = "lost";
-    Audio.lose();
+    Audio.musicStop(); Audio.lose();
     showModal("The wolf caught Peter! 🐺",
       `So sharp were the wolf's senses that it found Peter among the grass.` +
       `<br><br>Don't worry — in this tale, everyone gets another chance. Move softly and use the trees as cover.`,
@@ -620,6 +826,9 @@
 
   // first start
   startBtn.onclick = () => { state.round = 1; startRound(); };
+
+  // build a scene immediately so the meadow shows behind the menu (mode stays "menu")
+  makeLevel(state.round);
 
   // roundRect polyfill (older canvases)
   if (!CanvasRenderingContext2D.prototype.roundRect) {

@@ -16,14 +16,23 @@ Open `index.html` in any modern browser. That's it.
 | --- | --- |
 | Move | `W` `A` `S` `D` or arrow keys |
 | Tip-toe (quiet, slower) | hold `Shift` |
+| Spring the rope-trap | `Space` |
 | Pause | `P` |
 | Mute / unmute | `M` |
 
 ## 🎯 How to win
 
 1. **Collect every apple** scattered in the meadow.
-2. **Reach the gate** on the right to escape home.
+2. Then choose your ending:
+   - **Escape** — slip home through the **gate** on the right, *or*
+   - **Hero's ending** — lure the wolf onto the **rope-trap by the old oak** and press `Space` to catch it by the tail, just like in the story.
 3. Don't let the wolf **catch you** — and don't let its **suspicion meter** fill up.
+
+## 🎵 Music & friends
+
+- A jaunty, Prokofiev-flavored **theme melody** loops while you play (all synthesized in code — press `M` to mute).
+- The **🐦 bird** flutters near Peter and dive-bombs the wolf when it gives chase, breaking its focus.
+- The **🦆 duck** paddles in the pond and dives underwater when the wolf prowls too close.
 
 ## 🐺 The wolf
 
