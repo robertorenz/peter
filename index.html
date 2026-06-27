@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Peter and the Wolf</title>
+<style>
+  :root {
+    --ink:        #1f2a33;
+    --slate:      #2e3d49;
+    --paper:      #f4ecd8;
+    --gold:       #d9a441;
+    --gold-deep:  #b9822c;
+    --meadow:     #6fae5f;
+    --meadow-dk:  #4f8a45;
+    --sky-top:    #acd5e6;
+    --sky-bot:    #e9f3d6;
+    --teal:       #2f7d76;
+    --rust:       #b1543a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; height: 100%;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: var(--paper);
+    background:
+      radial-gradient(1200px 700px at 50% -10%, #2c4a55, #15212a 70%),
+      var(--ink);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  }
+  .frame {
+    position: relative;
+    width: min(96vw, 920px);
+  }
+  .titlebar {
+    display: flex; align-items: baseline; gap: 14px;
+    padding: 4px 6px 12px;
+  }
+  .titlebar h1 {
+    margin: 0; font-size: 22px; letter-spacing: .5px;
+    font-weight: 700; color: var(--gold);
+    text-shadow: 0 1px 0 rgba(0,0,0,.4);
+  }
+  .titlebar .sub {
+    font-size: 13px; color: #9fb4be; font-style: italic;
+  }
+  .stage {
+    position: relative;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow:
+      0 18px 50px rgba(0,0,0,.55),
+      0 0 0 1px rgba(255,255,255,.06) inset,
+      0 0 0 8px #20303a, 0 0 0 9px #0d161c;
+  }
+  canvas { display: block; width: 100%; height: auto; background: var(--sky-top); }
+
+  .hud {
+    position: absolute; top: 12px; left: 14px; right: 14px;
+    display: flex; justify-content: space-between; align-items: center;
+    pointer-events: none; font-weight: 600;
+    text-shadow: 0 1px 3px rgba(0,0,0,.6);
+  }
+  .pill {
+    background: rgba(20,30,38,.55);
+    border: 1px solid rgba(255,255,255,.12);
+    backdrop-filter: blur(4px);
+    padding: 6px 12px; border-radius: 999px;
+    font-size: 13px; letter-spacing: .3px;
+  }
+  .pill b { color: var(--gold); }
+
+  /* meter */
+  .meter { position: absolute; bottom: 12px; left: 14px; right: 14px; pointer-events:none; }
+  .meter .label { font-size: 11px; color:#d8e4ea; margin-bottom:4px; text-shadow:0 1px 2px rgba(0,0,0,.7);}
+  .bar { height: 9px; border-radius: 999px; background: rgba(10,16,20,.5);
+         border:1px solid rgba(255,255,255,.14); overflow:hidden; }
+  .bar > span { display:block; height:100%; width:0%;
+         background: linear-gradient(90deg, var(--meadow), var(--gold) 70%, var(--rust));
+         transition: width .12s linear; }
+
+  /* modal */
+  .overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(10,16,21,.62); backdrop-filter: blur(3px);
+    opacity: 0; pointer-events: none; transition: opacity .25s ease;
+  }
+  .overlay.show { opacity: 1; pointer-events: auto; }
+  .modal {
+    width: min(86%, 460px);
+    background: linear-gradient(180deg, #fbf5e4, var(--paper));
+    color: var(--ink);
+    border-radius: 16px; padding: 26px 28px 24px;
+    box-shadow: 0 24px 60px rgba(0,0,0,.5), 0 0 0 1px rgba(0,0,0,.08);
+    transform: translateY(10px) scale(.98); transition: transform .25s ease;
+    text-align: center;
+  }
+  .overlay.show .modal { transform: none; }
+  .modal .crest {
+    width: 58px; height: 58px; margin: 0 auto 10px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #ffe6a8, var(--gold) 60%, var(--gold-deep));
+    display:flex; align-items:center; justify-content:center; font-size: 30px;
+    box-shadow: 0 6px 16px rgba(185,130,44,.5);
+  }
+  .modal h2 { margin: 4px 0 6px; font-size: 24px; color: var(--slate); }
+  .modal p { margin: 8px 0; font-size: 14.5px; line-height: 1.5; color: #46555f; }
+  .modal .keys { font-size: 13px; color:#5a6a73; margin: 14px 0 4px; }
+  .modal .keys kbd {
+    display:inline-block; background:#fff; border:1px solid #cfc3a6;
+    border-bottom-width:2px; border-radius:6px; padding:2px 8px; margin:0 2px;
+    font-family: ui-monospace, monospace; font-size:12px; color:#3a474f;
+  }
+  .btn {
+    margin-top: 16px; border: none; cursor: pointer;
+    background: linear-gradient(180deg, var(--gold), var(--gold-deep));
+    color: #2a1e08; font-weight: 700; font-size: 15px; letter-spacing:.3px;
+    padding: 12px 26px; border-radius: 10px;
+    box-shadow: 0 6px 16px rgba(185,130,44,.45), 0 1px 0 rgba(255,255,255,.4) inset;
+    transition: transform .1s ease, box-shadow .2s ease;
+  }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 9px 20px rgba(185,130,44,.55); }
+  .btn:active { transform: translateY(1px); }
+  .foot { margin-top: 14px; font-size: 12px; color:#8a99a2; text-align:center; }
+  .foot kbd { font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="titlebar">
+      <h1>Peter &amp; the Wolf</h1>
+      <span class="sub">a meadow tale — guide Peter home before the wolf finds him</span>
+    </div>
+
+    <div class="stage">
+      <canvas id="game" width="900" height="540"></canvas>
+
+      <div class="hud">
+        <div class="pill">🍎 Apples <b id="score">0</b> / <span id="total">5</span></div>
+        <div class="pill">Round <b id="round">1</b></div>
+      </div>
+
+      <div class="meter">
+        <div class="label" id="meterLabel">The wolf's suspicion</div>
+        <div class="bar"><span id="alertFill"></span></div>
+      </div>
+
+      <div class="overlay show" id="overlay">
+        <div class="modal" id="modal">
+          <div class="crest">🐺</div>
+          <h2 id="mTitle">Peter and the Wolf</h2>
+          <p id="mBody">
+            Early one morning, Peter opened the gate and walked into the great green meadow…
+            but a wolf is prowling. Gather all the apples and slip back to the
+            <b>gate</b> on the right without being caught.
+          </p>
+          <p class="keys">
+            Move with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or the
+            <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> arrows.
+            Hold <kbd>Shift</kbd> to tip-toe quietly. Hide behind <b>trees</b>.
+          </p>
+          <button class="btn" id="startBtn">Begin the tale</button>
+          <div class="foot">Tip: the wolf hears you more when you run. Move softly when it's near.</div>
+        </div>
+      </div>
+    </div>
+    <div class="foot">Press <kbd>P</kbd> to pause · <kbd>M</kbd> to mute</div>
+  </div>
+
+<script>
+(() => {
+  "use strict";
+  const cv = document.getElementById("game");
+  const ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height;
+
+  // ---- UI refs ----
+  const overlay = document.getElementById("overlay");
+  const modal   = document.getElementById("modal");
+  const mTitle  = document.getElementById("mTitle");
+  const mBody   = document.getElementById("mBody");
+  const startBtn= document.getElementById("startBtn");
+  const scoreEl = document.getElementById("score");
+  const totalEl = document.getElementById("total");
+  const roundEl = document.getElementById("round");
+  const alertFill = document.getElementById("alertFill");
+  const meterLabel = document.getElementById("meterLabel");
+
+  // ---- audio (tiny WebAudio, no files) ----
+  const Audio = (() => {
+    let actx = null, muted = false;
+    const ensure = () => { if (!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); return actx; };
+    function tone(freq, dur, type="sine", gain=0.15, when=0) {
+      if (muted) return;
+      const a = ensure(); const t = a.currentTime + when;
+      const o = a.createOscillator(), g = a.createGain();
+      o.type = type; o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(gain, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(a.destination);
+      o.start(t); o.stop(t + dur + 0.02);
+    }
+    return {
+      pickup(){ tone(660,0.12,"triangle",0.18); tone(990,0.12,"triangle",0.14,0.08); },
+      win(){ [523,659,784,1046].forEach((f,i)=>tone(f,0.3,"triangle",0.16,i*0.12)); },
+      lose(){ tone(180,0.5,"sawtooth",0.2); tone(120,0.6,"sawtooth",0.18,0.08); },
+      growl(){ tone(90,0.25,"sawtooth",0.08); },
+      step(){ tone(220,0.05,"sine",0.04); },
+      toggle(){ muted=!muted; return muted; },
+      get muted(){ return muted; }
+    };
+  })();
+
+  // ---- input ----
+  const keys = {};
+  const KEYMAP = { arrowup:"up",arrowdown:"down",arrowleft:"left",arrowright:"right",
+                   w:"up",s:"down",a:"left",d:"right" };
+  addEventListener("keydown", (e) => {
+    const k = e.key.toLowerCase();
+    if (KEYMAP[k]) { keys[KEYMAP[k]] = true; e.preventDefault(); }
+    if (k === "shift") keys.sneak = true;
+    if (k === "p" && state.mode === "play") togglePause();
+    else if (k === "p" && state.mode === "pause") togglePause();
+    if (k === "m") { const m = Audio.toggle(); flash(m ? "Muted 🔇" : "Sound on 🔊"); }
+  });
+  addEventListener("keyup", (e) => {
+    const k = e.key.toLowerCase();
+    if (KEYMAP[k]) keys[KEYMAP[k]] = false;
+    if (k === "shift") keys.sneak = false;
+  });
+
+  // ---- world ----
+  const GATE = { x: W - 46, y: H/2, w: 46, h: 150 };
+  const rand = (a,b) => a + Math.random()*(b-a);
+
+  let trees = [], apples = [], peter, wolf;
+  const state = { mode: "menu", round: 1, score: 0, total: 5, alert: 0, t: 0, flashMsg: "", flashT: 0 };
+
+  function makeLevel(round) {
+    state.total = 4 + round;          // apples grow each round
+    state.score = 0; state.alert = 0;
+    totalEl.textContent = state.total;
+    scoreEl.textContent = 0;
+    roundEl.textContent = round;
+
+    // trees as cover, kept away from edges & gate
+    trees = [];
+    const treeCount = 5 + Math.min(round, 4);
+    for (let i = 0; i < treeCount; i++) {
+      let tx, ty, ok, tries = 0;
+      do {
+        tx = rand(90, W - 130); ty = rand(120, H - 70); ok = true;
+        for (const o of trees) if (Math.hypot(tx-o.x, ty-o.y) < 120) ok = false;
+        if (Math.abs(tx - GATE.x) < 140) ok = false;
+      } while (!ok && ++tries < 40);
+      trees.push({ x: tx, y: ty, r: 30, sway: rand(0, Math.PI*2) });
+    }
+
+    // apples scattered
+    apples = [];
+    for (let i = 0; i < state.total; i++) {
+      let ax, ay, ok, tries = 0;
+      do {
+        ax = rand(70, W - 90); ay = rand(90, H - 50); ok = true;
+        for (const t of trees) if (Math.hypot(ax-t.x, ay-t.y) < 46) ok = false;
+        for (const a of apples) if (Math.hypot(ax-a.x, ay-a.y) < 60) ok = false;
+      } while (!ok && ++tries < 50);
+      apples.push({ x: ax, y: ay, got: false, bob: rand(0,Math.PI*2) });
+    }
+
+    peter = { x: 70, y: H/2, r: 13, face: 1, step: 0 };
+    wolf  = { x: W*0.55, y: 80, r: 18, vx: 0, vy: 0, face: 1, mode:"patrol",
+              tx: W*0.55, ty: 80, step:0, growlCd: 0, speedBase: 1.5 + round*0.12 };
+  }
+
+  // ---- helpers ----
+  function nearestTreeCover(x, y) {
+    for (const t of trees) if (Math.hypot(x - t.x, y - t.y) < t.r + 6) return t;
+    return null;
+  }
+  function flash(msg) { state.flashMsg = msg; state.flashT = 90; }
+
+  // ---- update ----
+  function update() {
+    state.t++;
+    if (state.flashT > 0) state.flashT--;
+
+    // Peter movement
+    const sneaking = keys.sneak;
+    const spd = sneaking ? 1.7 : 3.1;
+    let dx = (keys.right?1:0) - (keys.left?1:0);
+    let dy = (keys.down?1:0) - (keys.up?1:0);
+    if (dx || dy) {
+      const m = Math.hypot(dx,dy) || 1; dx/=m; dy/=m;
+      peter.x += dx*spd; peter.y += dy*spd;
+      peter.step += spd*0.06;
+      if (dx) peter.face = dx>0?1:-1;
+      if (!sneaking && state.t % 16 === 0) Audio.step();
+    }
+    peter.x = Math.max(peter.r, Math.min(W - peter.r, peter.x));
+    peter.y = Math.max(peter.r+40, Math.min(H - peter.r-8, peter.y));
+
+    // apples
+    for (const a of apples) {
+      if (!a.got && Math.hypot(peter.x-a.x, peter.y-a.y) < peter.r + 12) {
+        a.got = true; state.score++; scoreEl.textContent = state.score;
+        Audio.pickup(); flash("🍎 +1");
+      }
+    }
+
+    // ----- wolf AI -----
+    const dist = Math.hypot(peter.x - wolf.x, peter.y - wolf.y);
+    const hidden = !!nearestTreeCover(peter.x, peter.y);
+    // how loud is Peter? running close = loud
+    const moving = (dx||dy);
+    let noise = 0;
+    if (moving) noise = sneaking ? 0.45 : 1.2;
+    // sight: wolf sees Peter within a radius unless hidden
+    const sightR = 190 + state.round*8;
+    const canSee = !hidden && dist < sightR;
+    const canHear = dist < 150 && noise > 0;
+
+    if (canSee || canHear) {
+      state.alert = Math.min(100, state.alert + (canSee?2.4:1.4) + noise*0.6);
+      wolf.mode = "hunt";
+    } else {
+      state.alert = Math.max(0, state.alert - 0.9);
+      if (state.alert < 30 && wolf.mode === "hunt") wolf.mode = "patrol";
+    }
+
+    // movement target
+    if (wolf.mode === "hunt") {
+      wolf.tx = peter.x; wolf.ty = peter.y;
+      if (wolf.growlCd <= 0) { Audio.growl(); wolf.growlCd = 70; }
+    } else {
+      // patrol: wander, occasionally pick a new point
+      if (Math.hypot(wolf.tx-wolf.x, wolf.ty-wolf.y) < 24 || state.t % 140 === 0) {
+        wolf.tx = rand(120, W-120); wolf.ty = rand(90, H-60);
+      }
+    }
+    if (wolf.growlCd > 0) wolf.growlCd--;
+
+    const huntSpeed = wolf.speedBase * (wolf.mode==="hunt" ? 1.55 : 0.8);
+    let wdx = wolf.tx - wolf.x, wdy = wolf.ty - wolf.y;
+    const wm = Math.hypot(wdx,wdy) || 1; wdx/=wm; wdy/=wm;
+    wolf.vx += (wdx*huntSpeed - wolf.vx)*0.12;
+    wolf.vy += (wdy*huntSpeed - wolf.vy)*0.12;
+    wolf.x += wolf.vx; wolf.y += wolf.vy;
+    wolf.x = Math.max(wolf.r, Math.min(W-wolf.r, wolf.x));
+    wolf.y = Math.max(wolf.r+40, Math.min(H-wolf.r-8, wolf.y));
+    if (Math.abs(wolf.vx) > 0.1) wolf.face = wolf.vx>0?1:-1;
+    wolf.step += (Math.abs(wolf.vx)+Math.abs(wolf.vy))*0.05;
+
+    // caught?
+    if (dist < peter.r + wolf.r - 4) return lose();
+    if (state.alert >= 100) return lose();
+
+    // escaped through gate with all apples?
+    const allApples = state.score >= state.total;
+    const atGate = peter.x > GATE.x - 30 && Math.abs(peter.y - GATE.y) < GATE.h/2;
+    if (atGate) {
+      if (allApples) return win();
+      else flash("Gather every apple first!");
+    }
+
+    // meter UI
+    alertFill.style.width = state.alert + "%";
+    meterLabel.textContent = wolf.mode === "hunt"
+      ? "⚠ The wolf has your scent!"
+      : (state.alert > 8 ? "The wolf grows curious…" : "The wolf's suspicion");
+  }
+
+  // ================= DRAWING =================
+  function draw() {
+    // sky gradient
+    const sky = ctx.createLinearGradient(0,0,0,H);
+    sky.addColorStop(0, "#acd5e6"); sky.addColorStop(0.45,"#cfe7df"); sky.addColorStop(1,"#e9f3d6");
+    ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
+
+    // distant hills
+    drawHill(0.30, "#bcd9a0", H*0.42);
+    drawHill(0.55, "#a6cd86", H*0.50);
+
+    // meadow
+    const mg = ctx.createLinearGradient(0,H*0.46,0,H);
+    mg.addColorStop(0,"#79b566"); mg.addColorStop(1,"#4f8a45");
+    ctx.fillStyle = mg; ctx.fillRect(0,H*0.46,W,H*0.54);
+
+    // soft meadow texture (static-ish dots)
+    ctx.globalAlpha = 0.10;
+    for (let i=0;i<60;i++){
+      const gx=(i*97%W), gy=H*0.5+((i*53)%(H*0.46));
+      ctx.fillStyle="#2f5e2a"; ctx.beginPath();
+      ctx.ellipse(gx,gy,8,3,0,0,7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // gate (home)
+    drawGate();
+
+    // apples
+    for (const a of apples) if (!a.got) drawApple(a);
+
+    // entities sorted by y for depth
+    const ents = [
+      ...trees.map(t => ({y:t.y, d:()=>drawTree(t)})),
+      {y:peter.y, d:()=>drawPeter(peter)},
+      {y:wolf.y,  d:()=>drawWolf(wolf)},
+    ].sort((a,b)=>a.y-b.y);
+    ents.forEach(e=>e.d());
+
+    // sight cone hint when hunting
+    if (wolf.mode === "hunt") {
+      ctx.save(); ctx.globalAlpha = 0.08; ctx.fillStyle = "#b1543a";
+      ctx.beginPath(); ctx.arc(wolf.x, wolf.y, 190, 0, 7); ctx.fill(); ctx.restore();
+    }
+
+    // flash message
+    if (state.flashT > 0) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, state.flashT/30);
+      ctx.font = "bold 22px Segoe UI, sans-serif";
+      ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "rgba(20,30,38,.6)";
+      ctx.fillStyle = "#fff7e0";
+      ctx.strokeText(state.flashMsg, W/2, 120);
+      ctx.fillText(state.flashMsg, W/2, 120);
+      ctx.restore();
+    }
+  }
+
+  function drawHill(speed, color, baseY) {
+    ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(0, baseY);
+    for (let x=0; x<=W; x+=20) {
+      const y = baseY - Math.sin((x*0.006) + speed*4) * 26 - 14;
+      ctx.lineTo(x, y);
+    }
+    ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath(); ctx.fill();
+  }
+
+  function drawGate() {
+    const g = GATE, x = g.x, top = g.y - g.h/2, bot = g.y + g.h/2;
+    // path to gate
+    ctx.fillStyle = "rgba(217,164,65,.25)";
+    ctx.beginPath(); ctx.moveTo(W-120, g.y-30); ctx.lineTo(x, top+10);
+    ctx.lineTo(x, bot-10); ctx.lineTo(W-120, g.y+30); ctx.closePath(); ctx.fill();
+    // posts
+    ctx.fillStyle = "#8a5a32";
+    ctx.fillRect(x-6, top, 10, g.h);
+    ctx.fillRect(W-12, top, 10, g.h);
+    // rails
+    ctx.strokeStyle = "#a06d3e"; ctx.lineWidth = 6;
+    for (const yy of [top+34, top+g.h*0.55]) {
+      ctx.beginPath(); ctx.moveTo(x-2, yy); ctx.lineTo(W-6, yy+6); ctx.stroke();
+    }
+    // sign
+    ctx.fillStyle = "#6f4a28"; ctx.fillRect(x-30, top-26, 58, 20);
+    ctx.fillStyle = "#ffe8b0"; ctx.font = "bold 12px Segoe UI"; ctx.textAlign="center";
+    ctx.fillText("HOME", x-1, top-12);
+  }
+
+  function drawApple(a) {
+    const bob = Math.sin(state.t*0.05 + a.bob)*2;
+    ctx.save(); ctx.translate(a.x, a.y+bob);
+    ctx.fillStyle = "rgba(20,30,20,.18)";
+    ctx.beginPath(); ctx.ellipse(0,12,9,3,0,0,7); ctx.fill();
+    ctx.fillStyle = "#c43d2e";
+    ctx.beginPath(); ctx.arc(0,0,8,0,7); ctx.fill();
+    ctx.fillStyle = "#e25a44";
+    ctx.beginPath(); ctx.arc(-2.5,-2.5,3,0,7); ctx.fill();
+    ctx.strokeStyle="#6f4a28"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(0,-7); ctx.lineTo(2,-12); ctx.stroke();
+    ctx.fillStyle="#4f8a45";
+    ctx.beginPath(); ctx.ellipse(5,-11,4,2,0.6,0,7); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawTree(t) {
+    const sway = Math.sin(state.t*0.02 + t.sway)*3;
+    // shadow
+    ctx.fillStyle = "rgba(20,30,20,.18)";
+    ctx.beginPath(); ctx.ellipse(t.x, t.y+30, 34, 10, 0, 0, 7); ctx.fill();
+    // trunk
+    ctx.fillStyle = "#7a5230";
+    ctx.fillRect(t.x-7, t.y-6, 14, 40);
+    // canopy (layered)
+    const greens = ["#3f7a38","#4f8f44","#62a657"];
+    greens.forEach((c,i)=>{
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.arc(t.x-16+sway, t.y-14-i*4, 24-i*3, 0, 7);
+      ctx.arc(t.x+16+sway, t.y-14-i*4, 24-i*3, 0, 7);
+      ctx.arc(t.x+sway,     t.y-30-i*4, 28-i*3, 0, 7);
+      ctx.fill();
+    });
+  }
+
+  function drawShadow(x,y,rx){ ctx.fillStyle="rgba(20,30,20,.22)";
+    ctx.beginPath(); ctx.ellipse(x,y,rx,rx*0.34,0,0,7); ctx.fill(); }
+
+  function drawPeter(p) {
+    const bounce = Math.sin(p.step)*2.2;
+    const x=p.x, y=p.y+bounce, f=p.face;
+    drawShadow(x, p.y+16, 14);
+    ctx.save(); ctx.translate(x,y); ctx.scale(f,1);
+    // legs
+    const sw = Math.sin(p.step*1.2)*4;
+    ctx.strokeStyle="#33414b"; ctx.lineWidth=5; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(-3,8); ctx.lineTo(-3+sw,18); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(3,8);  ctx.lineTo(3-sw,18);  ctx.stroke();
+    // body (blue jacket)
+    ctx.fillStyle="#2f6db0";
+    ctx.beginPath(); ctx.roundRect(-9,-6,18,16,5); ctx.fill();
+    // arm
+    ctx.strokeStyle="#2f6db0"; ctx.lineWidth=5;
+    ctx.beginPath(); ctx.moveTo(6,-1); ctx.lineTo(11,6+sw*0.4); ctx.stroke();
+    // head
+    ctx.fillStyle="#f0c79b";
+    ctx.beginPath(); ctx.arc(2,-14,9,0,7); ctx.fill();
+    // hair
+    ctx.fillStyle="#5a3a1d";
+    ctx.beginPath(); ctx.arc(2,-17,9,Math.PI,0); ctx.fill();
+    // red cap
+    ctx.fillStyle="#c43d2e";
+    ctx.beginPath(); ctx.arc(2,-19,8,Math.PI,0); ctx.fill();
+    ctx.fillRect(-6,-20,16,3);
+    // eye
+    ctx.fillStyle="#26303a";
+    ctx.beginPath(); ctx.arc(6,-14,1.6,0,7); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawWolf(w) {
+    const bounce = Math.sin(w.step)*1.8;
+    const x=w.x, y=w.y+bounce, f=w.face;
+    drawShadow(x, w.y+18, 22);
+    ctx.save(); ctx.translate(x,y); ctx.scale(f,1);
+    const hunting = w.mode==="hunt";
+    const body = hunting ? "#5a5e66" : "#6b6f77";
+    // legs
+    const sw = Math.sin(w.step*1.1)*5;
+    ctx.strokeStyle="#3c4046"; ctx.lineWidth=6; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(-10,10); ctx.lineTo(-10+sw,22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(8,10);   ctx.lineTo(8-sw,22);   ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-6,10);  ctx.lineTo(-6-sw,22);  ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(12,10);  ctx.lineTo(12+sw,22);  ctx.stroke();
+    // tail
+    ctx.strokeStyle=body; ctx.lineWidth=9;
+    ctx.beginPath(); ctx.moveTo(-14,2);
+    ctx.quadraticCurveTo(-28,-2,-24-Math.sin(w.step)*3,8); ctx.stroke();
+    // body
+    ctx.fillStyle=body;
+    ctx.beginPath(); ctx.roundRect(-16,-8,30,18,9); ctx.fill();
+    // neck + head
+    ctx.beginPath(); ctx.roundRect(8,-16,18,14,7); ctx.fill();
+    // snout
+    ctx.beginPath(); ctx.moveTo(24,-12); ctx.lineTo(34,-7); ctx.lineTo(24,-3); ctx.fill();
+    // nose
+    ctx.fillStyle="#1d2024"; ctx.beginPath(); ctx.arc(33,-7,2.2,0,7); ctx.fill();
+    // ear
+    ctx.fillStyle=body; ctx.beginPath();
+    ctx.moveTo(12,-16); ctx.lineTo(16,-26); ctx.lineTo(20,-15); ctx.fill();
+    // eye — glows red when hunting
+    ctx.fillStyle = hunting ? "#ff5a3c" : "#d9a441";
+    ctx.beginPath(); ctx.arc(22,-10,2.2,0,7); ctx.fill();
+    if (hunting){ ctx.globalAlpha=0.5; ctx.beginPath(); ctx.arc(22,-10,4,0,7); ctx.fill(); ctx.globalAlpha=1; }
+    ctx.restore();
+  }
+
+  // ================= GAME FLOW =================
+  let raf = null;
+  function loop() {
+    if (state.mode === "play") update();
+    draw();
+    raf = requestAnimationFrame(loop);
+  }
+
+  function showModal(title, body, btn) {
+    mTitle.textContent = title;
+    mBody.innerHTML = body;
+    startBtn.textContent = btn;
+    overlay.classList.add("show");
+  }
+  function hideModal(){ overlay.classList.remove("show"); }
+
+  function startRound() {
+    makeLevel(state.round);
+    hideModal();
+    state.mode = "play";
+  }
+
+  function win() {
+    state.mode = "won";
+    Audio.win();
+    const next = state.round + 1;
+    showModal("Safe at home! 🏡",
+      `Peter slipped through the gate with <b>all ${state.total} apples</b> — the wolf never caught him.` +
+      `<br><br>Ready for a wilder meadow? Round ${next} adds more apples and a hungrier wolf.`,
+      "Next round ▶");
+    startBtn.onclick = () => { state.round = next; startRound(); };
+  }
+
+  function lose() {
+    state.mode = "lost";
+    Audio.lose();
+    showModal("The wolf caught Peter! 🐺",
+      `So sharp were the wolf's senses that it found Peter among the grass.` +
+      `<br><br>Don't worry — in this tale, everyone gets another chance. Move softly and use the trees as cover.`,
+      "Try again ↺");
+    startBtn.onclick = () => { startRound(); };
+  }
+
+  function togglePause() {
+    if (state.mode === "play") {
+      state.mode = "pause";
+      showModal("Paused", "Take a breath. The meadow will wait.", "Resume");
+      startBtn.onclick = () => { hideModal(); state.mode="play"; };
+    }
+  }
+
+  // first start
+  startBtn.onclick = () => { state.round = 1; startRound(); };
+
+  // roundRect polyfill (older canvases)
+  if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function(x,y,w,h,r){
+      this.beginPath(); this.moveTo(x+r,y);
+      this.arcTo(x+w,y,x+w,y+h,r); this.arcTo(x+w,y+h,x,y+h,r);
+      this.arcTo(x,y+h,x,y,r); this.arcTo(x,y,x+w,y,r); this.closePath(); return this;
+    };
+  }
+
+  loop();
+})();
+</script>
+</body>
+</html>
