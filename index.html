@@ -216,6 +216,8 @@
       rope:   ["audio/wolf.wav", "audio/hunters.wav"],
     };
     const SYNTH_THEME = { apples:"peter", bird:"bird", duck:"duck", rope:"wolf" };
+    const ALL_TRACKS = ["audio/peter.wav","audio/duck.wav","audio/bird.wav","audio/cat.wav",
+                        "audio/grandfather.wav","audio/wolf.wav","audio/hunters.wav","audio/full.wav"];
     let curType = "apples", nowPlaying = "";
 
     let track = null;
@@ -256,8 +258,13 @@
         ensure();
         if (!track) { fallbackSynth(); return; }
         musicOn = false;
+        // ~45% of the time pull from the whole library, else the level's matched pool;
+        // avoid repeating the same piece twice in a row
         const pool = LEVEL_MUSIC[curType] || LEVEL_MUSIC.apples;
-        nowPlaying = pool[(Math.random()*pool.length)|0];
+        const list = (Math.random() < 0.45) ? ALL_TRACKS : pool;
+        let pick = list[(Math.random()*list.length)|0];
+        if (pick === nowPlaying && list.length > 1) pick = list[(Math.random()*list.length)|0];
+        nowPlaying = pick;
         track.muted = muted;
         try { track.src = nowPlaying; track.currentTime = 0; } catch(e){}
         const p = track.play();
