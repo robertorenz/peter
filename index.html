@@ -424,7 +424,9 @@
       const rk={x:p.x,y:p.y,r:26,kind:"rock",checked:false,hasRope:false}; obstacles.push(rk); rocks.push(rk); }
     rocks[(Math.random()*rocks.length)|0].hasRope = true;
     rope = { found:false, x:0, y:0, held:false };
-    peter = mkPeter(140,900, true);
+    // apples to throw — stun the wolf while you search and lure
+    for (let i=0;i<8;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+44}))),130,90); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
+    peter = mkPeter(140,900, true); state.apples = 4;
     wolf  = mkWolf(820,650, 1.5+round*0.07);
     state.phase = "search";
   }
@@ -464,12 +466,12 @@
     if (state.mode !== "play") return;
     if (state.type==="bird" || state.type==="duck") throwApple();
     else if (state.type==="apples") tryTrap();
-    else if (state.type==="rope") ropeAction();
+    else if (state.type==="rope") { if (!ropeAction()) throwApple(); }  // rope first, else hurl an apple
   }
 
   function aimTarget(){
     if (state.type==="bird") return cat;
-    if (state.type==="duck") return wolf;
+    if (state.type==="duck" || state.type==="rope") return wolf;
     return null;
   }
   function throwApple(){
@@ -489,25 +491,22 @@
     else if (dist(peter.x,peter.y,trap.x,trap.y) < 82) flash("Lure the wolf onto the rope, then Space!");
   }
 
-  function ropeAction(){                          // level 4 context action
-    if (trap.armed){
-      if (dist(peter.x,peter.y,oak.x,oak.y) < oak.r+70 && dist(wolf.x,wolf.y,oak.x,oak.y) < oak.r+55) { winRope(); return; }
-    }
+  function ropeAction(){                          // level 4 context action — returns true if it consumed the press
+    if (trap.armed && dist(peter.x,peter.y,oak.x,oak.y) < oak.r+70 && dist(wolf.x,wolf.y,oak.x,oak.y) < oak.r+55){ winRope(); return true; }
     if (peter.hasRope && dist(peter.x,peter.y,oak.x,oak.y) < oak.r+44){
       trap.armed=true; peter.hasRope=false; state.phase="lure";
-      flash("Rope set at the oak! Now lure the wolf here 🐺"); Audio.ding(); return;
+      flash("Rope set at the oak! Now lure the wolf here 🐺"); Audio.ding(); return true;
     }
-    // search the nearest rock
+    // search the nearest UN-checked rock (a checked rock falls through, so you can throw)
     let best=null, bd=1e9;
-    for (const o of obstacles) if (o.kind==="rock"){ const d=dist(peter.x,peter.y,o.x,o.y); if (d<o.r+34 && d<bd){bd=d;best=o;} }
+    for (const o of obstacles) if (o.kind==="rock" && !o.checked){ const d=dist(peter.x,peter.y,o.x,o.y); if (d<o.r+34 && d<bd){bd=d;best=o;} }
     if (best){
-      if (best.checked){ flash("Already looked under this rock"); return; }
       best.checked=true;
       if (best.hasRope){ rope.found=true; rope.x=best.x; rope.y=best.y+best.r+10; state.phase="carry"; flash("You found the rope! 🪢 Carry it to the big oak"); Audio.ding(); }
       else flash("Nothing under this rock…");
-      return;
+      return true;
     }
-    flash(rope.found ? (peter.hasRope?"Take the rope to the oak":"Pick up the rope") : "Search under a rock (stand close, press Space)");
+    return false;                                 // nothing to do here -> let doAction() throw an apple
   }
 
   // ================= UPDATE =================
@@ -544,7 +543,7 @@
         flash(a.ammo ? "🍎 picked up (ammo)" : "🍎 +1"); }
     }
     // gentle ammo respawn for throw levels
-    if ((state.type==="bird"||state.type==="duck") && state.t%280===0){
+    if ((state.type==="bird"||state.type==="duck"||state.type==="rope") && state.t%280===0){
       const left=apples.filter(a=>!a.got).length;
       if (left<3){ const p=placeAway(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+40})),100,70); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
     }
@@ -658,8 +657,8 @@
   function updateHUD(){
     if (state.type==="apples"){ objPill.style.display=""; ammoPill.style.display="none";
       objPill.innerHTML = `🍎 Apples <b>${state.apples}</b> / ${state.need}`; }
-    else if (state.type==="rope"){ objPill.style.display=""; ammoPill.style.display="none";
-      objPill.textContent = (peter.hasRope?"🪢 ":"") + state.objective; }
+    else if (state.type==="rope"){ objPill.style.display=""; ammoPill.style.display="";
+      objPill.textContent = (peter.hasRope?"🪢 ":"") + state.objective; ammoPill.innerHTML = `🍎 × <b>${state.apples}</b>`; }
     else { objPill.style.display=""; ammoPill.style.display="";
       objPill.textContent = state.objective; ammoPill.innerHTML = `🍎 × <b>${state.apples}</b>`; }
   }
