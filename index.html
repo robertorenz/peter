@@ -372,30 +372,30 @@
 
   // ---- Level 1: The Meadow (apples) ----
   function buildApples(round){
-    world={w:W,h:H};
-    gate = { x:W-46, y:H/2, w:46, h:150 };
-    pond = { x:165, y:H-96, rx:80, ry:40 };
-    oak  = { x:Math.round(W*0.6), y:Math.round(H*0.64), r:42 };
-    trap = { x:oak.x, y:oak.y+30, r:26, armed:false };
-    const keep=[{x:70,y:H/2,d:120},{x:pond.x,y:pond.y,d:120},{x:oak.x,y:oak.y,d:120},{x:gate.x,y:gate.y,d:150}];
-    for (let i=0;i<6;i++){ const p=placeAway(keep,120,90); obstacles.push({x:p.x,y:p.y,r:16,kind:"tree",cover:true}); keep.push({x:p.x,y:p.y,d:120}); }
-    state.need = 4 + round;
-    for (let i=0;i<state.need;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:46}))),60,70); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7)}); }
-    peter = mkPeter(70,H/2);
-    wolf  = mkWolf(W*0.55,80, 1.5+round*0.1);
-    duck  = { mode:"swim", ang:rand(0,7), dive:0, x:pond.x, y:pond.y, face:1, safe:false };
+    world={w:1500,h:1000};
+    gate = { x:world.w-46, y:world.h/2, w:46, h:170 };
+    pond = { x:250, y:world.h-160, rx:92, ry:50 };
+    oak  = { x:Math.round(world.w*0.55), y:Math.round(world.h*0.5), r:46 };
+    trap = { x:oak.x, y:oak.y+34, r:28, armed:false };
+    const keep=[{x:120,y:world.h/2,d:170},{x:pond.x,y:pond.y,d:160},{x:oak.x,y:oak.y,d:170},{x:gate.x,y:gate.y,d:210}];
+    addObstacles(11+round, ["tree","tree","rock"], keep);   // mostly trees (cover from the wolf)
+    state.need = 5 + round;
+    for (let i=0;i<state.need;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+44}))),120,80); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7)}); }
+    peter = mkPeter(120,world.h/2);
+    wolf  = mkWolf(world.w*0.5,140, 1.5+round*0.1);
+    duck  = { mode:"swim", ang:rand(0,7), dive:0, x:pond.x, y:pond.y, face:1, r:11, safe:false };
   }
 
   // ---- Level 2: Save the Bird (cat vs bird) ----
   function buildBird(round){
-    world={w:W,h:H};
-    oak = { x:W-90, y:120, r:46 };                      // the tall safe tree (top-right)
-    const keep=[{x:70,y:H/2,d:120},{x:oak.x,y:oak.y,d:120}];
-    for (let i=0;i<4;i++){ const p=placeAway(keep,140,100); obstacles.push({x:p.x,y:p.y,r:16,kind:"tree",cover:true}); keep.push({x:p.x,y:p.y,d:130}); }
-    for (let i=0;i<6;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:46}))),60,70); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
-    peter = mkPeter(90,H-90); state.apples=3;
-    bird  = { x:W*0.5, y:H*0.55, r:9, vx:0,vy:0, face:-1, hop:0, following:false, safe:false, gone:false };
-    cat   = mkCat(W*0.78, H*0.5, 1.55+round*0.1);
+    world={w:1400,h:950};
+    oak = { x:world.w-130, y:170, r:50 };               // the tall safe tree (far corner)
+    const keep=[{x:130,y:world.h-150,d:190},{x:oak.x,y:oak.y,d:210}];
+    addObstacles(8+round, ["tree","rock"], keep);
+    for (let i=0;i<8;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+44}))),120,80); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
+    peter = mkPeter(130,world.h-150); state.apples=4;
+    bird  = { x:world.w*0.45, y:world.h*0.55, r:9, vx:0,vy:0, face:-1, hop:0, following:false, safe:false, gone:false };
+    cat   = mkCat(world.w*0.7, world.h*0.4, 1.5+round*0.1);
   }
 
   // ---- Level 3: Rescue the Duck (big scrolling world) ----
@@ -579,11 +579,12 @@
     if (canSee||canHear){ state.alert=Math.min(100,state.alert+(canSee?2.4:1.4)+noise*0.6); wolf.mode="hunt"; }
     else { state.alert=Math.max(0,state.alert-0.9); if (state.alert<30) wolf.mode="patrol"; }
 
-    if (wolf.mode==="hunt"){ chase(wolf, peter.x, peter.y, 1.5); }
-    else { if (dist(wolf.tx,wolf.ty,wolf.x,wolf.y)<24 || state.t%140===0){ wolf.tx=rand(60,W-60); wolf.ty=rand(60,H-60); }
+    // a fully-alert wolf hunts faster, but only an actual pounce can catch Peter
+    if (wolf.mode==="hunt"){ chase(wolf, peter.x, peter.y, 1.5 + (state.alert>=100?0.25:0)); }
+    else { if (dist(wolf.tx,wolf.ty,wolf.x,wolf.y)<24 || state.t%140===0){ wolf.tx=rand(60,world.w-60); wolf.ty=rand(60,world.h-60); }
            if (wolf.growlCd>0) wolf.growlCd--; moveToward(wolf, wolf.tx, wolf.ty, wolf.speed*0.8); }
 
-    if (state.invuln<=0 && (d<peter.r+wolf.r-4 || state.alert>=100)) return lose("caught");
+    if (state.invuln<=0 && d<peter.r+wolf.r-4) return lose("caught");
     const atGate = peter.x>gate.x-30 && Math.abs(peter.y-gate.y)<gate.h/2;
     if (atGate){ if (state.apples>=state.need) return winEscape(); else flash("Gather every apple first!"); }
 
@@ -924,12 +925,12 @@
   }
 
   function drawGate(){
-    const g=gate, x=g.x, top=g.y-g.h/2;
+    const g=gate, x=g.x, top=g.y-g.h/2, right=world.w;
     ctx.fillStyle="rgba(217,164,65,.25)"; ctx.beginPath();
-    ctx.moveTo(W-120,g.y-30); ctx.lineTo(x,top+10); ctx.lineTo(x,top+g.h-10); ctx.lineTo(W-120,g.y+30); ctx.closePath(); ctx.fill();
-    ctx.fillStyle="#8a5a32"; ctx.fillRect(x-6,top,10,g.h); ctx.fillRect(W-12,top,10,g.h);
+    ctx.moveTo(right-120,g.y-30); ctx.lineTo(x,top+10); ctx.lineTo(x,top+g.h-10); ctx.lineTo(right-120,g.y+30); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#8a5a32"; ctx.fillRect(x-6,top,10,g.h); ctx.fillRect(right-12,top,10,g.h);
     ctx.strokeStyle="#a06d3e"; ctx.lineWidth=6;
-    for (const yy of [top+34, top+g.h*0.55]){ ctx.beginPath(); ctx.moveTo(x-2,yy); ctx.lineTo(W-6,yy+6); ctx.stroke(); }
+    for (const yy of [top+34, top+g.h*0.55]){ ctx.beginPath(); ctx.moveTo(x-2,yy); ctx.lineTo(right-6,yy+6); ctx.stroke(); }
     ctx.fillStyle="#6f4a28"; ctx.fillRect(x-30,top-26,58,20);
     ctx.fillStyle="#ffe8b0"; ctx.font="bold 12px Segoe UI"; ctx.textAlign="center"; ctx.fillText("HOME",x-1,top-12);
   }
