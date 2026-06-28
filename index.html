@@ -295,12 +295,13 @@
   const dist  = (ax,ay,bx,by) => Math.hypot(ax-bx, ay-by);
 
   function resolve(ent){                       // push ent out of solid obstacles + world bounds
+    const er = ent.r || 10;
     for (const o of obstacles) {
-      const d = Math.hypot(ent.x-o.x, ent.y-o.y), min = ent.r + o.r;
+      const d = Math.hypot(ent.x-o.x, ent.y-o.y), min = er + o.r;
       if (d < min && d > 0.001) { const k=(min-d)/d; ent.x += (ent.x-o.x)*k; ent.y += (ent.y-o.y)*k; }
     }
-    ent.x = clamp(ent.x, ent.r, world.w - ent.r);
-    ent.y = clamp(ent.y, ent.r, world.h - ent.r);
+    ent.x = clamp(ent.x, er, world.w - er);
+    ent.y = clamp(ent.y, er, world.h - er);
   }
   function blockedAt(x,y,r){ for (const o of obstacles) if (Math.hypot(x-o.x,y-o.y) < o.r+r) return true; return false; }
   function nearCover(x,y){ for (const o of obstacles) if (o.cover && Math.hypot(x-o.x,y-o.y) < o.r+18) return true; return false; }
@@ -393,7 +394,7 @@
     for (let i=0;i<4;i++){ const p=placeAway(keep,140,100); obstacles.push({x:p.x,y:p.y,r:16,kind:"tree",cover:true}); keep.push({x:p.x,y:p.y,d:130}); }
     for (let i=0;i<6;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:46}))),60,70); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
     peter = mkPeter(90,H-90); state.apples=3;
-    bird  = { x:W*0.5, y:H*0.55, vx:0,vy:0, face:-1, hop:0, following:false, safe:false, gone:false };
+    bird  = { x:W*0.5, y:H*0.55, r:9, vx:0,vy:0, face:-1, hop:0, following:false, safe:false, gone:false };
     cat   = mkCat(W*0.78, H*0.5, 1.55+round*0.1);
   }
 
@@ -405,7 +406,7 @@
     addObstacles(18+round, ["rock","tree","cliff"], keep);
     for (let i=0;i<10;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+40}))),120,90); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
     peter = mkPeter(120,180); state.apples=4;
-    duck  = { mode:"land", x:300, y:300, vx:0,vy:0, face:1, following:false, safe:false, gone:false, dive:0 };
+    duck  = { mode:"land", x:300, y:300, r:11, vx:0,vy:0, face:1, following:false, safe:false, gone:false, dive:0 };
     wolf  = mkWolf(900,250, 1.55+round*0.09);
   }
 
