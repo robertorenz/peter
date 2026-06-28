@@ -54,7 +54,7 @@
       0 0 0 1px rgba(255,255,255,.06) inset,
       0 0 0 8px #20303a, 0 0 0 9px #0d161c;
   }
-  canvas { display: block; width: 100%; height: auto; background: var(--sky-top); }
+  canvas { display: block; width: 100%; height: auto; background: #5f9e4f; }
 
   .hud {
     position: absolute; top: 12px; left: 14px; right: 14px;
@@ -89,7 +89,7 @@
   }
   .overlay.show { opacity: 1; pointer-events: auto; }
   .modal {
-    width: min(86%, 460px);
+    width: min(86%, 470px);
     background: linear-gradient(180deg, #fbf5e4, var(--paper));
     color: var(--ink);
     border-radius: 16px; padding: 26px 28px 24px;
@@ -130,7 +130,7 @@
   <div class="frame">
     <div class="titlebar">
       <h1>Peter &amp; the Wolf</h1>
-      <span class="sub">a meadow tale — guide Peter home before the wolf finds him</span>
+      <span class="sub">a four-part meadow adventure</span>
     </div>
 
     <div class="stage">
@@ -138,10 +138,10 @@
 
       <div class="hud">
         <div>
-          <span class="pill" id="applePill">🍎 Apples <b id="score">0</b> / <span id="total">5</span></span>
-          <span class="pill" id="rescuePill" style="display:none">🦆 <span id="duckStatus">Reach the duck!</span></span>
+          <span class="pill" id="objPill">🍎 Apples 0 / 5</span>
+          <span class="pill" id="ammoPill" style="display:none">🍎 × 0</span>
         </div>
-        <div class="pill">Level <b id="round">1</b> · <span id="levelName">The Meadow</span></div>
+        <div class="pill">Level <b id="lvlNum">1</b> · <span id="lvlName">The Meadow</span></div>
       </div>
 
       <div class="meter">
@@ -154,19 +154,16 @@
           <div class="crest">🐺</div>
           <h2 id="mTitle">Peter and the Wolf</h2>
           <p id="mBody">
-            Early one morning, Peter opened the gate and walked into the great green meadow.
-            His friend the <b>🐦 bird</b> flutters along, the <b>🦆 duck</b> paddles in the pond —
-            but a <b>wolf</b> is prowling. Gather every apple, then either slip home through the
-            <b>gate</b> or, for a hero's ending, lure the wolf onto the <b>rope by the old oak</b>.
+            Four little adventures in the great green meadow. First, gather every apple and
+            slip home through the <b>gate</b> — but keep clear of the prowling <b>wolf</b>.
           </p>
           <p class="keys">
-            Move with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or the
-            <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> arrows.
-            <kbd>Shift</kbd> to tip-toe · <kbd>Space</kbd> to spring the trap.
-            Hide behind <b>trees</b>; the bird will harry the wolf when it gives chase.
+            Move with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> /
+            <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> ·
+            <kbd>Shift</kbd> tip-toe · <kbd>Space</kbd> throw apple / search / trap.
           </p>
           <button class="btn" id="startBtn">Begin the tale</button>
-          <div class="foot">Tip: the wolf hears you more when you run. Move softly when it's near.</div>
+          <div class="foot">Throw apples to freeze the cat &amp; wolf. Hide behind rocks and trees.</div>
         </div>
       </div>
     </div>
@@ -178,25 +175,21 @@
   "use strict";
   const cv = document.getElementById("game");
   const ctx = cv.getContext("2d");
-  const W = cv.width, H = cv.height;
+  const W = cv.width, H = cv.height;          // viewport size
 
   // ---- UI refs ----
   const overlay = document.getElementById("overlay");
-  const modal   = document.getElementById("modal");
   const mTitle  = document.getElementById("mTitle");
   const mBody   = document.getElementById("mBody");
   const startBtn= document.getElementById("startBtn");
-  const scoreEl = document.getElementById("score");
-  const totalEl = document.getElementById("total");
-  const roundEl = document.getElementById("round");
+  const objPill = document.getElementById("objPill");
+  const ammoPill= document.getElementById("ammoPill");
+  const lvlNum  = document.getElementById("lvlNum");
+  const lvlName = document.getElementById("lvlName");
   const alertFill = document.getElementById("alertFill");
   const meterLabel = document.getElementById("meterLabel");
-  const applePill = document.getElementById("applePill");
-  const rescuePill = document.getElementById("rescuePill");
-  const duckStatus = document.getElementById("duckStatus");
-  const levelName = document.getElementById("levelName");
 
-  // ---- audio (tiny WebAudio, no files) ----
+  // ================= AUDIO =================
   const Audio = (() => {
     let actx = null, muted = false;
     const ensure = () => { if (!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); return actx; };
@@ -211,43 +204,43 @@
       o.connect(g); g.connect(a.destination);
       o.start(t); o.stop(t + dur + 0.02);
     }
-
-    // --- Prokofiev character leitmotifs, transcribed from the score (notes are
-    //     [MIDI, frames@60fps], 0 = rest). See tools/make_themes.py + /themes/*.mid ---
+    // transcribed leitmotifs for the synth fallback ([MIDI,frames], 0 = rest)
     const THEMES = {peter:{bpm:144,notes:[[67,25],[72,25],[72,12],[74,12],[76,25],[74,25],[76,25],[72,50],[76,25],[77,25],[79,12],[77,12],[76,25],[74,25],[72,50],[0,25],[67,25],[72,25],[76,25],[79,25],[81,25],[79,25],[76,25],[72,25],[74,25],[71,25],[74,25],[77,25],[76,50],[72,50]]},duck:{bpm:92,notes:[[74,39],[72,20],[70,20],[72,39],[74,59],[72,20],[70,39],[69,39],[70,20],[72,20],[69,39],[67,78],[0,39],[70,39],[69,20],[67,20],[65,39],[67,59],[69,20],[70,39],[69,39],[67,20],[66,20],[67,39],[67,117]]},bird:{bpm:152,notes:[[88,6],[89,6],[88,6],[89,6],[88,6],[89,6],[88,6],[89,6],[88,6],[87,6],[86,6],[85,6],[84,12],[83,12],[81,6],[83,6],[84,6],[86,6],[88,6],[89,6],[91,6],[93,6],[91,12],[88,12],[84,24],[86,6],[88,6],[86,6],[88,6],[86,6],[88,6],[86,6],[88,6],[89,12],[86,12],[83,12],[79,12],[84,47],[0,47]]},cat:{bpm:112,notes:[[48,16],[52,16],[55,16],[52,16],[55,16],[57,16],[55,32],[53,16],[57,16],[60,16],[57,16],[56,16],[57,16],[52,32],[52,16],[55,16],[59,16],[55,16],[58,16],[59,16],[55,32],[57,16],[53,16],[50,16],[53,16],[52,64]]},grandfather:{bpm:88,notes:[[50,20],[0,20],[50,20],[52,20],[54,20],[52,20],[50,41],[45,20],[50,20],[54,20],[52,20],[50,41],[45,41],[50,14],[52,14],[54,14],[55,41],[54,41],[52,41],[50,82],[45,82]]},wolf:{bpm:76,notes:[[55,47],[55,47],[56,47],[55,47],[56,47],[55,47],[53,95],[54,47],[55,47],[56,47],[55,47],[51,95],[50,95]]},hunters:{bpm:120,notes:[[69,22],[69,8],[69,30],[74,30],[69,30],[70,30],[69,30],[67,30],[65,30],[69,22],[69,8],[69,30],[74,30],[77,30],[76,60],[69,60]]}};
 
-    // Pre-rendered MIDI pieces (the Prokofiev themes + a full-score excerpt +
-    // the two arrangement files). The game plays a RANDOM one each round and
-    // falls back to the in-code synth if a file can't load.  Built by
-    // tools/render_audio.py  (regenerate after adding/changing MIDI).
-    const PLAYLIST = ["audio/01_peter.wav","audio/02_duck.wav","audio/03_bird.wav",
-      "audio/04_cat.wav","audio/05_grandfather.wav","audio/06_wolf.wav","audio/07_hunters.wav",
-      "audio/full_excerpt.wav","audio/peter-en-de-wolf.wav","audio/wolf-choosing.wav"];
-    let track = null, nowPlaying = "";
+    // Pre-rendered audio (real soundfont via FluidSynth — see tools/render_sf.ps1).
+    // Music is MATCHED to the level; falls back to the synth theme if a file is absent.
+    const LEVEL_MUSIC = {
+      apples: ["audio/peter.wav", "audio/full.wav"],
+      bird:   ["audio/bird.wav", "audio/cat.wav"],
+      duck:   ["audio/duck.wav", "audio/wolf.wav"],
+      rope:   ["audio/wolf.wav", "audio/hunters.wav"],
+    };
+    const SYNTH_THEME = { apples:"peter", bird:"bird", duck:"duck", rope:"wolf" };
+    let curType = "apples", nowPlaying = "";
+
+    let track = null;
     try {
       track = new window.Audio();
-      track.loop = true; track.volume = 0.6; track.preload = "auto";
-      track.addEventListener("error", () => startSynth());   // missing file -> synth
+      track.loop = true; track.volume = 0.62; track.preload = "auto";
+      track.addEventListener("error", () => fallbackSynth());
     } catch (e) { track = null; }
 
     let musicOn=false, mIdx=0, mWait=0, MELODY = THEMES.peter.notes;
-    function startSynth(){ musicOn = true; mIdx = 0; mWait = 0; }
     const midiHz = (n) => 440 * Math.pow(2, (n-69)/12);
     function setTheme(name){ if (THEMES[name]){ MELODY = THEMES[name].notes; mIdx=0; mWait=0; } }
+    function startSynth(){ musicOn = true; mIdx = 0; mWait = 0; }
+    function fallbackSynth(){ setTheme(SYNTH_THEME[curType] || "peter"); startSynth(); }
     function musicNote(midi, frames){
-      if (midi <= 0) return;                    // rest
+      if (midi <= 0) return;
       const f = midiHz(midi), sec = frames/60;
-      tone(f, sec*1.7, "triangle", 0.05);       // melody voice
-      tone(f/2, sec*1.5, "sine", 0.03);         // soft octave below
+      tone(f, sec*1.7, "triangle", 0.05); tone(f/2, sec*1.5, "sine", 0.03);
     }
     function musicTick(){
       if (!musicOn || muted) return;
       if (mWait-- > 0) return;
-      const [n, fr] = MELODY[mIdx];
-      musicNote(n, fr);
+      const [n, fr] = MELODY[mIdx]; musicNote(n, fr);
       mWait = fr; mIdx = (mIdx+1) % MELODY.length;
     }
-
     return {
       pickup(){ tone(660,0.12,"triangle",0.18); tone(990,0.12,"triangle",0.14,0.08); },
       win(){ [523,659,784,1046].forEach((f,i)=>tone(f,0.3,"triangle",0.16,i*0.12)); },
@@ -255,733 +248,772 @@
       lose(){ tone(180,0.5,"sawtooth",0.2); tone(120,0.6,"sawtooth",0.18,0.08); },
       growl(){ tone(90,0.25,"sawtooth",0.08); },
       step(){ tone(220,0.05,"sine",0.04); },
+      throwSfx(){ tone(520,0.08,"triangle",0.10); tone(380,0.07,"triangle",0.07,0.03); },
+      thud(){ tone(150,0.18,"square",0.16); tone(90,0.22,"sawtooth",0.12,0.02); },
+      ding(){ tone(880,0.1,"triangle",0.16); tone(1320,0.12,"triangle",0.12,0.06); },
+      setLevel(t){ curType = LEVEL_MUSIC[t] ? t : "apples"; },
       musicStart(){
         ensure();
-        if (!track) { startSynth(); return; }   // no <audio> support -> synth
-        musicOn = false;                          // a real piece takes over
-        nowPlaying = PLAYLIST[(Math.random()*PLAYLIST.length)|0];
+        if (!track) { fallbackSynth(); return; }
+        musicOn = false;
+        const pool = LEVEL_MUSIC[curType] || LEVEL_MUSIC.apples;
+        nowPlaying = pool[(Math.random()*pool.length)|0];
         track.muted = muted;
         try { track.src = nowPlaying; track.currentTime = 0; } catch(e){}
         const p = track.play();
-        if (p && p.catch) p.catch(() => startSynth());   // blocked/failed -> synth
+        if (p && p.catch) p.catch(() => fallbackSynth());
       },
       musicStop(){ musicOn=false; if (track) try { track.pause(); } catch(e){} },
       musicTick,
-      setTheme,
-      nowPlaying(){ return nowPlaying; },
       toggle(){ muted=!muted; if (track) track.muted = muted; return muted; },
       get muted(){ return muted; }
     };
   })();
 
-  // ---- input ----
+  // ================= INPUT =================
   const keys = {};
   const KEYMAP = { arrowup:"up",arrowdown:"down",arrowleft:"left",arrowright:"right",
                    w:"up",s:"down",a:"left",d:"right" };
   addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
     if (KEYMAP[k]) { keys[KEYMAP[k]] = true; e.preventDefault(); }
-    if (k === " ") { e.preventDefault(); tryTrap(); }
+    if (k === " ") { e.preventDefault(); if (!keys.space) { keys.space = true; doAction(); } }
     if (k === "shift") keys.sneak = true;
-    if (k === "p" && state.mode === "play") togglePause();
-    else if (k === "p" && state.mode === "pause") togglePause();
+    if (k === "p") { if (state.mode==="play") togglePause(); else if (state.mode==="pause") togglePause(); }
     if (k === "m") { const m = Audio.toggle(); flash(m ? "Muted 🔇" : "Sound on 🔊"); }
   });
   addEventListener("keyup", (e) => {
     const k = e.key.toLowerCase();
     if (KEYMAP[k]) keys[KEYMAP[k]] = false;
+    if (k === " ") keys.space = false;
     if (k === "shift") keys.sneak = false;
   });
 
-  // ---- world ----
-  const GATE = { x: W - 46, y: H/2, w: 46, h: 150 };
-  const rand = (a,b) => a + Math.random()*(b-a);
+  // ================= HELPERS =================
+  const rand  = (a,b) => a + Math.random()*(b-a);
   const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+  const dist  = (ax,ay,bx,by) => Math.hypot(ax-bx, ay-by);
 
-  // Levels cycle as you progress; each loop round raises the difficulty.
+  function resolve(ent){                       // push ent out of solid obstacles + world bounds
+    for (const o of obstacles) {
+      const d = Math.hypot(ent.x-o.x, ent.y-o.y), min = ent.r + o.r;
+      if (d < min && d > 0.001) { const k=(min-d)/d; ent.x += (ent.x-o.x)*k; ent.y += (ent.y-o.y)*k; }
+    }
+    ent.x = clamp(ent.x, ent.r, world.w - ent.r);
+    ent.y = clamp(ent.y, ent.r, world.h - ent.r);
+  }
+  function blockedAt(x,y,r){ for (const o of obstacles) if (Math.hypot(x-o.x,y-o.y) < o.r+r) return true; return false; }
+  function nearCover(x,y){ for (const o of obstacles) if (o.cover && Math.hypot(x-o.x,y-o.y) < o.r+18) return true; return false; }
+
+  function moveToward(ent, tx, ty, sp){
+    let dx=tx-ent.x, dy=ty-ent.y; const m=Math.hypot(dx,dy)||1;
+    ent.vx = (ent.vx||0) + ((dx/m*sp) - (ent.vx||0))*0.16;
+    ent.vy = (ent.vy||0) + ((dy/m*sp) - (ent.vy||0))*0.16;
+    ent.x += ent.vx; ent.y += ent.vy;
+    if (Math.abs(ent.vx) > 0.1) ent.face = ent.vx>0?1:-1;
+    ent.step = (ent.step||0) + (Math.abs(ent.vx)+Math.abs(ent.vy))*0.05;
+    resolve(ent);
+  }
+
+  // ================= WORLD / LEVELS =================
   const LEVELS = [
     { type:"apples", name:"The Meadow",
-      brief:"Gather every apple, then slip home through the <b>gate</b> — or, for a hero's ending, lure the wolf onto the <b>rope by the old oak</b> and press <kbd>Space</kbd>." },
-    { type:"rescue", name:"Rescue the Duck",
-      brief:"The foolish duck has waddled out of the pond and the wolf is coming for her! Get close so she <b>follows you</b>, then lead her back to the <b>safety of the pond</b> before the wolf catches her." },
+      brief:"Gather every apple, then slip home through the <b>gate</b> — or lure the wolf onto the <b>rope by the old oak</b> and press <kbd>Space</kbd> for a hero's ending." },
+    { type:"bird", name:"Save the Bird",
+      brief:"The <b>cat</b> is stalking the little <b>bird</b>! Throw apples with <kbd>Space</kbd> to <b>freeze the cat</b>, and lead the bird to the safety of the <b>tall tree</b>." },
+    { type:"duck", name:"Rescue the Duck",
+      brief:"Lead the <b>duck</b> across the wide meadow to the <b>pond</b>. <b>Stun the wolf</b> with apples (<kbd>Space</kbd>) and weave around the rocks, cliffs and trees — your friend follows you." },
+    { type:"rope", name:"Trap the Wolf",
+      brief:"Help <b>Grandpa</b>! Search under the <b>rocks</b> (<kbd>Space</kbd>) for the hidden <b>rope</b>, carry it to the <b>big oak</b>, then lure the wolf there and spring the trap." },
   ];
-  const levelIndexFor = (round) => ((round - 1) % LEVELS.length); // 0-based
+  const levelIndexFor = (round) => ((round - 1) % LEVELS.length);
 
-  let trees = [], apples = [], peter, wolf, pond, duck, bird, oak, trap;
-  const state = { mode: "menu", round: 1, level: 0, type: "apples",
-                  score: 0, total: 5, alert: 0, t: 0, flashMsg: "", flashT: 0 };
+  let world = { w:W, h:H };
+  const cam = { x:0, y:0 };
+  let obstacles = [], apples = [], projectiles = [], decor = [];
+  let peter, wolf, cat, duck, bird, grandpa, pond, oak, gate, trap, rope;
 
-  function makeLevel(round) {
-    const idx = levelIndexFor(round);
-    const L = LEVELS[idx];
-    state.level = idx; state.type = L.type;
-    state.score = 0; state.alert = 0;
+  const state = { mode:"menu", round:1, level:0, type:"apples", scroll:false,
+                  t:0, alert:0, apples:0, need:0, objective:"", phase:"", invuln:0,
+                  flashMsg:"", flashT:0, won:false };
 
-    // HUD chrome for this level
-    levelName.textContent = L.name;
-    roundEl.textContent = idx + 1;
-    applePill.style.display  = L.type === "apples" ? "" : "none";
-    rescuePill.style.display = L.type === "rescue" ? "" : "none";
+  const STUN = 150;
 
-    // fixed landmarks: the duck's pond (the safe haven) and the old oak
-    pond = { x: 165, y: H - 96, rx: 80, ry: 40 };
-    oak  = { x: Math.round(W*0.6), y: Math.round(H*0.64), r: 42 };
+  function scatterDecor(n){
+    decor = [];
+    for (let i=0;i<n;i++) decor.push({x:rand(0,world.w), y:rand(0,world.h),
+      k:(Math.random()<0.7?"tuft":"flower"), c:["#e8d24a","#e36d8b","#ffffff","#d98cd0"][(Math.random()*4)|0]});
+  }
+  function placeAway(pts, minD, pad){
+    let x,y,ok,tries=0;
+    do { x=rand(pad,world.w-pad); y=rand(pad,world.h-pad); ok=true;
+      for(const p of pts) if (Math.hypot(x-p.x,y-p.y) < (p.d||minD)) ok=false;
+    } while(!ok && ++tries<80);
+    return {x,y};
+  }
 
-    const clearOfLandmarks = (x, y, pad) =>
-      Math.hypot(x-pond.x, y-pond.y) > pond.rx + pad &&
-      Math.hypot(x-oak.x,  y-oak.y)  > oak.r  + pad;
+  function makeLevel(round){
+    const idx = levelIndexFor(round), L = LEVELS[idx];
+    state.level=idx; state.type=L.type; state.alert=0; state.apples=0;
+    state.t=0; state.invuln=70; state.won=false; state.phase=""; projectiles=[];
+    obstacles=[]; apples=[]; pond=oak=gate=trap=rope=cat=grandpa=null; duck=bird=null;
+    lvlNum.textContent = idx+1; lvlName.textContent = L.name;
 
-    // trees as cover, kept away from edges, gate, pond & oak
-    trees = [];
-    const treeCount = 5 + Math.min(round, 4);
-    for (let i = 0; i < treeCount; i++) {
-      let tx, ty, ok, tries = 0;
-      do {
-        tx = rand(90, W - 130); ty = rand(120, H - 70); ok = true;
-        for (const o of trees) if (Math.hypot(tx-o.x, ty-o.y) < 120) ok = false;
-        if (Math.abs(tx - GATE.x) < 140) ok = false;
-        if (!clearOfLandmarks(tx, ty, 70)) ok = false;
-      } while (!ok && ++tries < 50);
-      trees.push({ x: tx, y: ty, r: 30, sway: rand(0, Math.PI*2) });
-    }
+    if (L.type==="apples") buildApples(round);
+    else if (L.type==="bird") buildBird(round);
+    else if (L.type==="duck") buildDuck(round);
+    else buildRope(round);
 
-    peter = { x: 70, y: H/2, r: 13, face: 1, step: 0 };
-    bird  = { x: 100, y: H/2-44, vx:0, vy:0, flutter: 0 };  // Peter's friend, harries the wolf
+    state.scroll = world.w > W || world.h > H;
+    scatterDecor(Math.round(world.w*world.h/16000));
+    centerCamera();
+  }
 
-    if (L.type === "apples") {
-      // ---- Level: gather apples, escape or trap the wolf ----
-      state.total = 4 + round;
-      totalEl.textContent = state.total;
-      scoreEl.textContent = 0;
-      trap = { x: oak.x, y: oak.y + 30, r: 26, armed: false };
+  // ---- Level 1: The Meadow (apples) ----
+  function buildApples(round){
+    world={w:W,h:H};
+    gate = { x:W-46, y:H/2, w:46, h:150 };
+    pond = { x:165, y:H-96, rx:80, ry:40 };
+    oak  = { x:Math.round(W*0.6), y:Math.round(H*0.64), r:42 };
+    trap = { x:oak.x, y:oak.y+30, r:26, armed:false };
+    const keep=[{x:70,y:H/2,d:120},{x:pond.x,y:pond.y,d:120},{x:oak.x,y:oak.y,d:120},{x:gate.x,y:gate.y,d:150}];
+    for (let i=0;i<6;i++){ const p=placeAway(keep,120,90); obstacles.push({x:p.x,y:p.y,r:16,kind:"tree",cover:true}); keep.push({x:p.x,y:p.y,d:120}); }
+    state.need = 4 + round;
+    for (let i=0;i<state.need;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:46}))),60,70); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7)}); }
+    peter = mkPeter(70,H/2);
+    wolf  = mkWolf(W*0.55,80, 1.5+round*0.1);
+    duck  = { mode:"swim", ang:rand(0,7), dive:0, x:pond.x, y:pond.y, face:1, safe:false };
+  }
 
-      apples = [];
-      for (let i = 0; i < state.total; i++) {
-        let ax, ay, ok, tries = 0;
-        do {
-          ax = rand(70, W - 90); ay = rand(90, H - 50); ok = true;
-          for (const t of trees) if (Math.hypot(ax-t.x, ay-t.y) < 46) ok = false;
-          for (const a of apples) if (Math.hypot(ax-a.x, ay-a.y) < 60) ok = false;
-          if (!clearOfLandmarks(ax, ay, 30)) ok = false;
-        } while (!ok && ++tries < 60);
-        apples.push({ x: ax, y: ay, got: false, bob: rand(0,Math.PI*2) });
-      }
+  // ---- Level 2: Save the Bird (cat vs bird) ----
+  function buildBird(round){
+    world={w:W,h:H};
+    oak = { x:W-90, y:120, r:46 };                      // the tall safe tree (top-right)
+    const keep=[{x:70,y:H/2,d:120},{x:oak.x,y:oak.y,d:120}];
+    for (let i=0;i<4;i++){ const p=placeAway(keep,140,100); obstacles.push({x:p.x,y:p.y,r:16,kind:"tree",cover:true}); keep.push({x:p.x,y:p.y,d:130}); }
+    for (let i=0;i<6;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:46}))),60,70); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
+    peter = mkPeter(90,H-90); state.apples=3;
+    bird  = { x:W*0.5, y:H*0.55, vx:0,vy:0, face:-1, hop:0, following:false, safe:false, gone:false };
+    cat   = mkCat(W*0.78, H*0.5, 1.55+round*0.1);
+  }
 
-      wolf = { x: W*0.55, y: 80, r: 18, vx: 0, vy: 0, face: 1, mode:"patrol",
-               tx: W*0.55, ty: 80, step:0, growlCd: 0, speedBase: 1.5 + round*0.12 };
-      duck = { mode:"swim", ang: rand(0,Math.PI*2), dive: 0, x: pond.x, y: pond.y, face: 1 };
+  // ---- Level 3: Rescue the Duck (big scrolling world) ----
+  function buildDuck(round){
+    world={w:1700,h:1100};
+    pond = { x:1500, y:920, rx:120, ry:74 };            // safety, far corner
+    const keep=[{x:120,y:160,d:180},{x:pond.x,y:pond.y,d:220}];
+    addObstacles(18+round, ["rock","tree","cliff"], keep);
+    for (let i=0;i<10;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+40}))),120,90); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
+    peter = mkPeter(120,180); state.apples=4;
+    duck  = { mode:"land", x:300, y:300, vx:0,vy:0, face:1, following:false, safe:false, gone:false, dive:0 };
+    wolf  = mkWolf(900,250, 1.55+round*0.09);
+  }
 
-    } else {
-      // ---- Level: rescue the duck before the wolf eats her ----
-      apples = [];
-      trap = null;                         // no rope-trap this level
-      duckStatus.textContent = "Reach the duck!";
+  // ---- Level 4: Trap the Wolf with Grandpa (big scrolling world) ----
+  function buildRope(round){
+    world={w:1700,h:1100};
+    oak = { x:1480, y:300, r:54 };                      // the big oak (trap site)
+    grandpa = { x:oak.x-46, y:oak.y+34, face:1, step:0 };
+    trap = { x:oak.x, y:oak.y+40, r:30, armed:false };
+    const keep=[{x:140,y:900,d:200},{x:oak.x,y:oak.y,d:200}];
+    addObstacles(8+round, ["tree","cliff"], keep);
+    // searchable rocks — exactly one hides the rope
+    const rocks=[];
+    for (let i=0;i<7;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+60}))).concat(rocks.map(r=>({x:r.x,y:r.y,d:160})),),160,120);
+      const rk={x:p.x,y:p.y,r:26,kind:"rock",checked:false,hasRope:false}; obstacles.push(rk); rocks.push(rk); }
+    rocks[(Math.random()*rocks.length)|0].hasRope = true;
+    rope = { found:false, x:0, y:0, held:false };
+    peter = mkPeter(140,900, true);
+    wolf  = mkWolf(820,650, 1.5+round*0.07);
+    state.phase = "search";
+  }
 
-      // the duck has wandered onto dry land, far from the pond's safety
-      duck = { mode:"land", x: rand(W*0.5, W*0.66), y: rand(H*0.4, H*0.62),
-               vx:0, vy:0, face:-1, following:false, safe:false, eaten:false, panic:0 };
-      // the wolf starts up high, already stalking toward the duck
-      wolf = { x: W*0.75, y: 90, r: 18, vx: 0, vy: 0, face: -1, mode:"hunt",
-               tx: duck.x, ty: duck.y, step:0, growlCd: 0, speedBase: 1.45 + round*0.10 };
+  function addObstacles(n, kinds, keep){
+    for (let i=0;i<n;i++){
+      const kind = kinds[(Math.random()*kinds.length)|0];
+      const r = kind==="cliff"?42 : kind==="rock"?26 : 16;
+      const p = placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+r+40}))), 120, 80);
+      obstacles.push({x:p.x,y:p.y,r, kind, cover: kind!=="cliff"});
+      keep.push({x:p.x,y:p.y,d:r+60});
     }
   }
 
-  // ---- helpers ----
-  function nearestTreeCover(x, y) {
-    for (const t of trees) if (Math.hypot(x - t.x, y - t.y) < t.r + 6) return t;
+  const mkPeter = (x,y,rope) => ({x,y,r:13,face:1,step:0,hasRope:false});
+  const mkWolf  = (x,y,spd) => ({x,y,r:18,vx:0,vy:0,face:1,step:0,mode:"patrol",tx:x,ty:y,growlCd:0,stun:0,speed:spd});
+  const mkCat   = (x,y,spd) => ({x,y,r:14,vx:0,vy:0,face:1,step:0,stun:0,speed:spd,growlCd:0});
+
+  // ================= CAMERA =================
+  function centerCamera(){
+    if (state.scroll){
+      cam.x = clamp(peter.x - W/2, 0, Math.max(0, world.w - W));
+      cam.y = clamp(peter.y - H/2, 0, Math.max(0, world.h - H));
+    } else { cam.x = 0; cam.y = 0; }
+  }
+  function updateCamera(){
+    if (!state.scroll) { cam.x=0; cam.y=0; return; }
+    const tx = clamp(peter.x - W/2, 0, world.w - W);
+    const ty = clamp(peter.y - H/2, 0, world.h - H);
+    cam.x += (tx - cam.x)*0.12; cam.y += (ty - cam.y)*0.12;
+  }
+
+  // ================= ACTIONS =================
+  function flash(msg){ state.flashMsg = msg; state.flashT = 100; }
+
+  function doAction(){
+    if (state.mode !== "play") return;
+    if (state.type==="bird" || state.type==="duck") throwApple();
+    else if (state.type==="apples") tryTrap();
+    else if (state.type==="rope") ropeAction();
+  }
+
+  function aimTarget(){
+    if (state.type==="bird") return cat;
+    if (state.type==="duck") return wolf;
     return null;
   }
-  function flash(msg) { state.flashMsg = msg; state.flashT = 90; }
-
-  // shared wolf physics: ease toward a target at the given speed
-  function stepWolf(tx, ty, speed) {
-    let wdx = tx - wolf.x, wdy = ty - wolf.y;
-    const wm = Math.hypot(wdx,wdy) || 1; wdx/=wm; wdy/=wm;
-    wolf.vx += (wdx*speed - wolf.vx)*0.12;
-    wolf.vy += (wdy*speed - wolf.vy)*0.12;
-    wolf.x = clamp(wolf.x + wolf.vx, wolf.r, W-wolf.r);
-    wolf.y = clamp(wolf.y + wolf.vy, wolf.r+40, H-wolf.r-8);
-    if (Math.abs(wolf.vx) > 0.1) wolf.face = wolf.vx>0?1:-1;
-    wolf.step += (Math.abs(wolf.vx)+Math.abs(wolf.vy))*0.05;
+  function throwApple(){
+    if (state.apples <= 0) { flash("Out of apples — find more 🍎"); return; }
+    const e = aimTarget();
+    let ang = peter.face>=0 ? 0 : Math.PI;
+    if (e && !e.gone) ang = Math.atan2(e.y-peter.y, e.x-peter.x);
+    state.apples--;
+    const sp = 8.2;
+    projectiles.push({ x:peter.x, y:peter.y-8, vx:Math.cos(ang)*sp, vy:Math.sin(ang)*sp, spin:0, life:80 });
+    Audio.throwSfx();
   }
-  // the bird, when close, harries the wolf and slows it
-  const birdSlow = () => Math.hypot(bird.x-wolf.x, bird.y-wolf.y) < 78 ? 0.45 : 1;
 
-  // ---- update ----
-  function update() {
-    state.t++;
-    Audio.musicTick();
-    if (state.flashT > 0) state.flashT--;
+  function tryTrap(){                            // level 1 rope-at-oak
+    if (!trap || !trap.armed) return;
+    if (dist(wolf.x,wolf.y,trap.x,trap.y) < trap.r+wolf.r && dist(peter.x,peter.y,trap.x,trap.y) < 82) winCapture();
+    else if (dist(peter.x,peter.y,trap.x,trap.y) < 82) flash("Lure the wolf onto the rope, then Space!");
+  }
 
-    // Peter movement (common to all levels)
+  function ropeAction(){                          // level 4 context action
+    if (trap.armed){
+      if (dist(peter.x,peter.y,oak.x,oak.y) < oak.r+70 && dist(wolf.x,wolf.y,oak.x,oak.y) < oak.r+55) { winRope(); return; }
+    }
+    if (peter.hasRope && dist(peter.x,peter.y,oak.x,oak.y) < oak.r+44){
+      trap.armed=true; peter.hasRope=false; state.phase="lure";
+      flash("Rope set at the oak! Now lure the wolf here 🐺"); Audio.ding(); return;
+    }
+    // search the nearest rock
+    let best=null, bd=1e9;
+    for (const o of obstacles) if (o.kind==="rock"){ const d=dist(peter.x,peter.y,o.x,o.y); if (d<o.r+34 && d<bd){bd=d;best=o;} }
+    if (best){
+      if (best.checked){ flash("Already looked under this rock"); return; }
+      best.checked=true;
+      if (best.hasRope){ rope.found=true; rope.x=best.x; rope.y=best.y+best.r+10; state.phase="carry"; flash("You found the rope! 🪢 Carry it to the big oak"); Audio.ding(); }
+      else flash("Nothing under this rock…");
+      return;
+    }
+    flash(rope.found ? (peter.hasRope?"Take the rope to the oak":"Pick up the rope") : "Search under a rock (stand close, press Space)");
+  }
+
+  // ================= UPDATE =================
+  function update(){
+    state.t++; Audio.musicTick();
+    if (state.flashT>0) state.flashT--;
+    if (state.invuln>0) state.invuln--;
+
+    // Peter
     const sneaking = keys.sneak;
-    const spd = sneaking ? 1.7 : 3.1;
-    let dx = (keys.right?1:0) - (keys.left?1:0);
-    let dy = (keys.down?1:0) - (keys.up?1:0);
-    const moving = !!(dx || dy);
-    if (moving) {
-      const m = Math.hypot(dx,dy) || 1; dx/=m; dy/=m;
-      peter.x += dx*spd; peter.y += dy*spd;
-      peter.step += spd*0.06;
-      if (dx) peter.face = dx>0?1:-1;
-      if (!sneaking && state.t % 16 === 0) Audio.step();
+    const spd = sneaking ? 1.8 : 3.15;
+    let dx=(keys.right?1:0)-(keys.left?1:0), dy=(keys.down?1:0)-(keys.up?1:0);
+    const moving=!!(dx||dy);
+    if (moving){ const m=Math.hypot(dx,dy)||1; dx/=m; dy/=m;
+      peter.x+=dx*spd; peter.y+=dy*spd; peter.step+=spd*0.06;
+      if (dx) peter.face=dx>0?1:-1;
+      if (!sneaking && state.t%16===0) Audio.step();
     }
-    peter.x = clamp(peter.x, peter.r, W - peter.r);
-    peter.y = clamp(peter.y, peter.r+40, H - peter.r-8);
+    resolve(peter);
+    updateCamera();
 
-    // the bird hovers near Peter, but dive-bombs the wolf whenever it hunts
-    const birdTargetsWolf = wolf.mode === "hunt";
-    const bwx = birdTargetsWolf ? wolf.x : peter.x - 22*peter.face;
-    const bwy = birdTargetsWolf ? wolf.y - 12 : peter.y - 46;
-    bird.vx += (bwx - bird.x)*0.025; bird.vy += (bwy - bird.y)*0.025;
-    bird.vx *= 0.9; bird.vy *= 0.9;
-    bird.x += bird.vx; bird.y += bird.vy;
-    bird.flutter += 0.45;
+    // projectiles
+    for (const p of projectiles){
+      p.x+=p.vx; p.y+=p.vy; p.vy+=0.05; p.spin+=0.35; p.life--;
+      const e=aimTarget();
+      if (e && !e.gone && Math.hypot(p.x-e.x,p.y-e.y) < e.r+9){ e.stun=STUN; p.dead=true; Audio.thud(); flash("🍎 splat! frozen"); }
+      if (p.life<=0 || blockedAt(p.x,p.y,4) || p.x<0||p.y<0||p.x>world.w||p.y>world.h) p.dead=true;
+    }
+    projectiles = projectiles.filter(p=>!p.dead);
 
-    if (state.type === "apples") updateApples(moving, sneaking);
-    else updateRescue();
+    // apple pickups
+    for (const a of apples){
+      if (!a.got && dist(peter.x,peter.y,a.x,a.y) < peter.r+13){ a.got=true; state.apples++; Audio.pickup();
+        flash(a.ammo ? "🍎 picked up (ammo)" : "🍎 +1"); }
+    }
+    // gentle ammo respawn for throw levels
+    if ((state.type==="bird"||state.type==="duck") && state.t%280===0){
+      const left=apples.filter(a=>!a.got).length;
+      if (left<3){ const p=placeAway(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+40})),100,70); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
+    }
+
+    if (state.type==="apples") updateApples(moving, sneaking);
+    else if (state.type==="bird") updateBird();
+    else if (state.type==="duck") updateDuck();
+    else updateRope();
+
+    updateHUD();
   }
 
-  // ===== Level: gather apples, escape through the gate, or trap the wolf =====
-  function updateApples(moving, sneaking) {
-    for (const a of apples) {
-      if (!a.got && Math.hypot(peter.x-a.x, peter.y-a.y) < peter.r + 12) {
-        a.got = true; state.score++; scoreEl.textContent = state.score;
-        Audio.pickup(); flash("🍎 +1");
+  // shared wolf/cat chase toward a target (respects stun + obstacles)
+  function chase(ent, tx, ty, factor){
+    if (ent.stun>0){ ent.stun--; ent.vx*=0.6; ent.vy*=0.6; return; }
+    if (ent.growlCd>0) ent.growlCd--;
+    else { Audio.growl(); ent.growlCd=80; }
+    moveToward(ent, tx, ty, ent.speed*factor);
+  }
+
+  function updateApples(moving, sneaking){
+    // duck swims (decor)
+    duck.ang+=0.012; duck.x=pond.x+Math.cos(duck.ang)*pond.rx*0.55; duck.y=pond.y+Math.sin(duck.ang)*pond.ry*0.5;
+    duck.face=Math.cos(duck.ang)>=0?1:-1;
+    duck.dive=clamp(duck.dive+((dist(wolf.x,wolf.y,pond.x,pond.y)<pond.rx+36)?0.05:-0.04),0,1);
+    if (!trap.armed && state.apples>=state.need){ trap.armed=true; flash("All apples! Trap the wolf at the oak (Space) — or flee home 🏡"); }
+
+    const d=dist(peter.x,peter.y,wolf.x,wolf.y);
+    const hidden=nearCover(peter.x,peter.y);
+    const noise = moving ? (sneaking?0.45:1.2) : 0;
+    const canSee = !hidden && d<210, canHear = d<150 && noise>0;
+    if (canSee||canHear){ state.alert=Math.min(100,state.alert+(canSee?2.4:1.4)+noise*0.6); wolf.mode="hunt"; }
+    else { state.alert=Math.max(0,state.alert-0.9); if (state.alert<30) wolf.mode="patrol"; }
+
+    if (wolf.mode==="hunt"){ chase(wolf, peter.x, peter.y, 1.5); }
+    else { if (dist(wolf.tx,wolf.ty,wolf.x,wolf.y)<24 || state.t%140===0){ wolf.tx=rand(60,W-60); wolf.ty=rand(60,H-60); }
+           if (wolf.growlCd>0) wolf.growlCd--; moveToward(wolf, wolf.tx, wolf.ty, wolf.speed*0.8); }
+
+    if (state.invuln<=0 && (d<peter.r+wolf.r-4 || state.alert>=100)) return lose("caught");
+    const atGate = peter.x>gate.x-30 && Math.abs(peter.y-gate.y)<gate.h/2;
+    if (atGate){ if (state.apples>=state.need) return winEscape(); else flash("Gather every apple first!"); }
+
+    state.alert=state.alert; setMeter(state.alert, wolf.mode==="hunt"?"⚠ The wolf has your scent!":(state.alert>8?"The wolf grows curious…":"The wolf's suspicion"));
+    state.objective = `gather apples & reach the gate`;
+  }
+
+  function updateBird(){
+    // the bird follows Peter once he's near, and waddle/hops along
+    if (!bird.safe && !bird.gone){
+      if (dist(bird.x,bird.y,oak.x,oak.y) < oak.r-2){ bird.safe=true; flash("🐦 Safe in the tall tree!"); }
+      else {
+        const dP=dist(bird.x,bird.y,peter.x,peter.y), dC=dist(bird.x,bird.y,cat.x,cat.y);
+        if (dP<54) bird.following=true;
+        let tx,ty,sp=0;
+        if (bird.following){ tx=peter.x-20*peter.face; ty=peter.y+8; sp=2.7; }
+        else if (dC<150){ tx=bird.x*2-cat.x; ty=bird.y*2-cat.y; sp=2.4; }
+        if (sp>0){ moveToward(bird,tx,ty,sp); } else { bird.vx*=0.8; bird.vy*=0.8; bird.x+=bird.vx; bird.y+=bird.vy; resolve(bird); }
+        bird.hop+=0.3;
       }
     }
-    if (!trap.armed && state.score >= state.total) {
-      trap.armed = true;
-      flash("All apples! Lure the wolf onto the rope by the oak (SPACE) — or flee home 🏡");
-    }
+    // the cat hunts the bird
+    if (!bird.safe) chase(cat, bird.x, bird.y, 1.0);
+    if (state.invuln<=0 && !bird.safe && dist(cat.x,cat.y,bird.x,bird.y) < cat.r+10){ bird.gone=true; return lose("bird"); }
+    if (bird.safe) return winBird();
 
-    // the duck swims a slow circle, diving when the wolf prowls near
-    duck.ang += 0.012;
-    duck.x = pond.x + Math.cos(duck.ang)*pond.rx*0.55;
-    duck.y = pond.y + Math.sin(duck.ang)*pond.ry*0.5;
-    duck.face = Math.cos(duck.ang) >= 0 ? 1 : -1;
-    const wolfNearPond = Math.hypot(wolf.x-pond.x, wolf.y-pond.y) < pond.rx + 36;
-    duck.dive = clamp(duck.dive + (wolfNearPond ? 0.05 : -0.04), 0, 1);
-
-    // wolf senses Peter by sight (unless hidden) and by sound (running close)
-    const dist = Math.hypot(peter.x - wolf.x, peter.y - wolf.y);
-    const hidden = !!nearestTreeCover(peter.x, peter.y);
-    const noise = moving ? (sneaking ? 0.45 : 1.2) : 0;
-    const sightR = 190 + state.round*8;
-    const canSee = !hidden && dist < sightR;
-    const canHear = dist < 150 && noise > 0;
-    if (canSee || canHear) {
-      state.alert = Math.min(100, state.alert + (canSee?2.4:1.4) + noise*0.6);
-      wolf.mode = "hunt";
-    } else {
-      state.alert = Math.max(0, state.alert - 0.9);
-      if (state.alert < 30 && wolf.mode === "hunt") wolf.mode = "patrol";
-    }
-
-    if (wolf.mode === "hunt") {
-      wolf.tx = peter.x; wolf.ty = peter.y;
-      if (wolf.growlCd <= 0) { Audio.growl(); wolf.growlCd = 70; }
-    } else if (Math.hypot(wolf.tx-wolf.x, wolf.ty-wolf.y) < 24 || state.t % 140 === 0) {
-      wolf.tx = rand(120, W-120); wolf.ty = rand(90, H-60);
-    }
-    if (wolf.growlCd > 0) wolf.growlCd--;
-
-    const slow = birdSlow();
-    if (slow < 1) {
-      state.alert = Math.max(0, state.alert - 3);
-      if (state.alert < 25 && wolf.mode === "hunt") wolf.mode = "patrol";
-    }
-    stepWolf(wolf.tx, wolf.ty, wolf.speedBase * (wolf.mode==="hunt" ? 1.55 : 0.8) * slow);
-
-    if (dist < peter.r + wolf.r - 4) return lose();
-    if (state.alert >= 100) return lose();
-
-    const allApples = state.score >= state.total;
-    const atGate = peter.x > GATE.x - 30 && Math.abs(peter.y - GATE.y) < GATE.h/2;
-    if (atGate) { if (allApples) return win(); else flash("Gather every apple first!"); }
-
-    alertFill.style.width = state.alert + "%";
-    meterLabel.textContent = wolf.mode === "hunt"
-      ? "⚠ The wolf has your scent!"
-      : (state.alert > 8 ? "The wolf grows curious…" : "The wolf's suspicion");
+    const dw=dist(cat.x,cat.y,bird.x,bird.y);
+    setMeter(clamp(100-(dw-26)/2.0,0,100), cat.stun>0?"The cat is frozen! ❄":(dw<120?"⚠ The cat is closing on the bird!":"Danger to the bird"));
+    state.objective = bird.following ? "Lead the bird to the tall tree!" : "Reach the bird so it follows you";
   }
 
-  // ===== Level: reach the duck so she follows, then lead her to the pond =====
-  function updateRescue() {
-    // -- the duck --
-    if (!duck.safe && !duck.eaten) {
-      if (Math.hypot(duck.x-pond.x, duck.y-pond.y) < pond.rx - 4) {
-        duck.safe = true; flash("🦆 Safe in the pond!");
-      } else {
-        const dPeter = Math.hypot(duck.x-peter.x, duck.y-peter.y);
-        const dWolf  = Math.hypot(duck.x-wolf.x,  duck.y-wolf.y);
-        if (dPeter < 56) duck.following = true;
-        let tx, ty, dspd = 0;
-        if (duck.following) { tx = peter.x - 22*peter.face; ty = peter.y + 10; dspd = 2.55; duck.panic = 0; }
-        else if (dWolf < 150) { tx = duck.x*2 - wolf.x; ty = duck.y*2 - wolf.y; dspd = 2.2; duck.panic = 1; }
-        else { duck.panic = 0; }
-        if (dspd > 0) {
-          let ddx = tx-duck.x, ddy = ty-duck.y; const m = Math.hypot(ddx,ddy)||1; ddx/=m; ddy/=m;
-          duck.vx += (ddx*dspd - duck.vx)*0.14; duck.vy += (ddy*dspd - duck.vy)*0.14;
-        } else { duck.vx *= 0.8; duck.vy *= 0.8; }
-        duck.x = clamp(duck.x + duck.vx, 16, W-16);
-        duck.y = clamp(duck.y + duck.vy, 56, H-14);
-        if (Math.abs(duck.vx) > 0.1) duck.face = duck.vx>0?1:-1;
+  function updateDuck(){
+    if (!duck.safe && !duck.gone){
+      if (dist(duck.x,duck.y,pond.x,pond.y) < pond.rx-6){ duck.safe=true; flash("🦆 Safe in the pond!"); }
+      else {
+        const dP=dist(duck.x,duck.y,peter.x,peter.y), dW=dist(duck.x,duck.y,wolf.x,wolf.y);
+        if (dP<58) duck.following=true;
+        let tx,ty,sp=0;
+        if (duck.following){ tx=peter.x-22*peter.face; ty=peter.y+10; sp=2.75; }
+        else if (dW<170){ tx=duck.x*2-wolf.x; ty=duck.y*2-wolf.y; sp=2.4; }
+        if (sp>0) moveToward(duck,tx,ty,sp); else { duck.vx*=0.8; duck.vy*=0.8; duck.x+=duck.vx; duck.y+=duck.vy; resolve(duck); }
       }
     }
-    duck.dive = 0;
+    if (!duck.safe) chase(wolf, duck.x, duck.y, 1.0);
+    if (state.invuln<=0 && !duck.safe && dist(wolf.x,wolf.y,duck.x,duck.y) < wolf.r+9){ duck.gone=true; return lose("duck"); }
+    if (duck.safe) return winDuck();
 
-    // -- the wolf hunts the duck --
-    if (!duck.safe) {
-      wolf.tx = duck.x; wolf.ty = duck.y;
-      if (wolf.growlCd <= 0) { Audio.growl(); wolf.growlCd = 70; }
-    }
-    if (wolf.growlCd > 0) wolf.growlCd--;
-    stepWolf(wolf.tx, wolf.ty, wolf.speedBase * 1.4 * birdSlow() * (duck.safe ? 0.4 : 1));
-
-    if (!duck.safe && Math.hypot(wolf.x-duck.x, wolf.y-duck.y) < wolf.r + 9) { duck.eaten = true; return lose(); }
-    if (duck.safe) return winRescue();
-
-    // -- danger meter + status --
-    const dw = Math.hypot(wolf.x-duck.x, wolf.y-duck.y);
-    state.alert = clamp(100 - (dw-30)/2.1, 0, 100);
-    alertFill.style.width = state.alert + "%";
-    meterLabel.textContent = state.alert > 70 ? "⚠ The wolf is upon the duck!" : "Danger to the duck";
-    duckStatus.textContent = duck.following ? "Following — lead her to the pond!" : "Reach the duck so she follows!";
+    const dw=dist(wolf.x,wolf.y,duck.x,duck.y);
+    setMeter(clamp(100-(dw-28)/2.2,0,100), wolf.stun>0?"The wolf is frozen! ❄":(dw<140?"⚠ The wolf is upon the duck!":"Danger to the duck"));
+    state.objective = duck.following ? "Lead the duck to the pond →" : "Reach the duck so it follows you";
   }
 
-  // ================= DRAWING =================
-  function draw() {
-    // sky gradient
-    const sky = ctx.createLinearGradient(0,0,0,H);
-    sky.addColorStop(0, "#acd5e6"); sky.addColorStop(0.45,"#cfe7df"); sky.addColorStop(1,"#e9f3d6");
-    ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
+  function updateRope(){
+    // pick up a revealed rope
+    if (rope.found && !peter.hasRope && dist(peter.x,peter.y,rope.x,rope.y) < peter.r+16){ peter.hasRope=true; flash("Got the rope! 🪢 To the oak!"); Audio.pickup(); }
+    if (grandpa) grandpa.step+=0.02;
+    // the wolf hunts Peter the whole time
+    chase(wolf, peter.x, peter.y, 1.35);
+    if (state.invuln<=0 && dist(wolf.x,wolf.y,peter.x,peter.y) < peter.r+wolf.r-3) return lose("caught");
 
-    // distant hills
-    drawHill(0.30, "#bcd9a0", H*0.42);
-    drawHill(0.55, "#a6cd86", H*0.50);
+    const dw=dist(wolf.x,wolf.y,peter.x,peter.y);
+    setMeter(clamp(100-(dw-40)/2.4,0,100), trap.armed?"Lure the wolf to the oak!":"The wolf is hunting you");
+    state.objective = trap.armed ? "Get the wolf to the oak, then Space"
+                    : peter.hasRope ? "Carry the rope to the big oak"
+                    : rope.found ? "Pick up the rope you uncovered"
+                    : "Search under the rocks (Space)";
+  }
 
-    // meadow
-    const mg = ctx.createLinearGradient(0,H*0.46,0,H);
-    mg.addColorStop(0,"#79b566"); mg.addColorStop(1,"#4f8a45");
-    ctx.fillStyle = mg; ctx.fillRect(0,H*0.46,W,H*0.54);
+  function setMeter(v, label){ state.alert=v; alertFill.style.width = clamp(v,0,100)+"%"; meterLabel.textContent = label; }
 
-    // soft meadow texture (static-ish dots)
-    ctx.globalAlpha = 0.10;
-    for (let i=0;i<60;i++){
-      const gx=(i*97%W), gy=H*0.5+((i*53)%(H*0.46));
-      ctx.fillStyle="#2f5e2a"; ctx.beginPath();
-      ctx.ellipse(gx,gy,8,3,0,0,7); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
+  function updateHUD(){
+    if (state.type==="apples"){ objPill.style.display=""; ammoPill.style.display="none";
+      objPill.innerHTML = `🍎 Apples <b>${state.apples}</b> / ${state.need}`; }
+    else if (state.type==="rope"){ objPill.style.display=""; ammoPill.style.display="none";
+      objPill.textContent = (peter.hasRope?"🪢 ":"") + state.objective; }
+    else { objPill.style.display=""; ammoPill.style.display="";
+      objPill.textContent = state.objective; ammoPill.innerHTML = `🍎 × <b>${state.apples}</b>`; }
+  }
 
-    // pond (the safe haven)
-    drawPond(pond);
-    // in the rescue level, mark the pond as the goal
-    if (state.type === "rescue" && duck && !duck.safe) {
-      ctx.save();
-      ctx.globalAlpha = 0.30 + Math.sin(state.t*0.08)*0.12;
-      ctx.strokeStyle = "#ffe8a8"; ctx.lineWidth = 3; ctx.setLineDash([7,7]);
-      ctx.beginPath(); ctx.ellipse(pond.x, pond.y, pond.rx+10, pond.ry+8, 0, 0, 7); ctx.stroke();
-      ctx.restore();
-      ctx.save(); ctx.globalAlpha = 0.85; ctx.fillStyle = "#fff7e0";
-      ctx.font = "bold 12px Segoe UI"; ctx.textAlign = "center";
-      ctx.fillText("safety ▾", pond.x, pond.y - pond.ry - 12); ctx.restore();
-    }
+  // ================= DRAW =================
+  function draw(){
+    drawGround();
+    ctx.save(); ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
 
-    // gate (home)
-    drawGate();
+    // ground features
+    if (state.scroll) { ctx.strokeStyle="rgba(40,70,40,.5)"; ctx.lineWidth=6; ctx.strokeRect(0,0,world.w,world.h); }
+    if (pond) drawPond(pond);
+    if (state.type==="duck" && duck && !duck.safe) drawGoalRing(pond.x,pond.y,pond.rx+12,pond.ry+10,"safety ▾");
+    if (gate) drawGate();
+    if (trap && state.type==="apples") drawTrapCoil(trap);
+    if (state.type==="rope"){ if (oak) drawGoalRing(oak.x,oak.y+oak.r+6,oak.r+10,(oak.r+10)*0.4, trap&&trap.armed?"trap set":"oak"); }
+    if (rope && rope.found && !peter.hasRope) drawRope(rope.x, rope.y, false);
 
-    // the rope-trap coil on the ground (apples level only)
-    drawTrap(trap);
-
-    // apples
     for (const a of apples) if (!a.got) drawApple(a);
 
-    // entities sorted by y for depth
-    const ents = [
-      ...trees.map(t => ({y:t.y, d:()=>drawTree(t)})),
-      {y:oak.y,   d:()=>drawOak(oak)},
-      {y:duck.y,  d:()=>drawDuck()},
-      {y:peter.y, d:()=>drawPeter(peter)},
-      {y:wolf.y,  d:()=>drawWolf(wolf)},
-    ].sort((a,b)=>a.y-b.y);
-    ents.forEach(e=>e.d());
+    // depth-sorted world entities
+    const ents=[];
+    for (const o of obstacles) ents.push({y:o.y, d:()=>drawObstacle(o)});
+    if (oak)     ents.push({y:oak.y, d:()=>drawOak(oak)});
+    if (grandpa) ents.push({y:grandpa.y, d:()=>drawGrandpa(grandpa)});
+    if (duck)    ents.push({y:duck.y, d:()=>drawDuck()});
+    if (bird)    ents.push({y:bird.y, d:()=>drawBird()});
+    if (cat)     ents.push({y:cat.y, d:()=>drawCat(cat)});
+    if (peter)   ents.push({y:peter.y, d:()=>drawPeter(peter)});
+    if (wolf)    ents.push({y:wolf.y, d:()=>drawWolf(wolf)});
+    ents.sort((a,b)=>a.y-b.y).forEach(e=>e.d());
 
-    // sight cone hint when hunting
-    if (wolf.mode === "hunt") {
-      ctx.save(); ctx.globalAlpha = 0.08; ctx.fillStyle = "#b1543a";
-      ctx.beginPath(); ctx.arc(wolf.x, wolf.y, 190, 0, 7); ctx.fill(); ctx.restore();
-    }
+    for (const p of projectiles) drawProjectile(p);
+    ctx.restore();
 
-    // the bird flies above everything
-    drawBird(bird);
-
-    // flash message
-    if (state.flashT > 0) {
-      ctx.save();
-      ctx.globalAlpha = Math.min(1, state.flashT/30);
-      ctx.font = "bold 22px Segoe UI, sans-serif";
-      ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "rgba(20,30,38,.6)";
-      ctx.fillStyle = "#fff7e0";
-      ctx.strokeText(state.flashMsg, W/2, 120);
-      ctx.fillText(state.flashMsg, W/2, 120);
+    // flash banner (screen space)
+    if (state.flashT>0){
+      ctx.save(); ctx.globalAlpha=Math.min(1,state.flashT/30);
+      ctx.font="bold 22px Segoe UI, sans-serif"; ctx.textAlign="center";
+      ctx.lineWidth=4; ctx.strokeStyle="rgba(20,30,38,.6)"; ctx.fillStyle="#fff7e0";
+      ctx.strokeText(state.flashMsg, W/2, 116); ctx.fillText(state.flashMsg, W/2, 116);
       ctx.restore();
     }
   }
 
-  function drawHill(speed, color, baseY) {
-    ctx.fillStyle = color; ctx.beginPath(); ctx.moveTo(0, baseY);
-    for (let x=0; x<=W; x+=20) {
-      const y = baseY - Math.sin((x*0.006) + speed*4) * 26 - 14;
-      ctx.lineTo(x, y);
+  function drawGround(){
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,"#79b566"); g.addColorStop(1,"#578f48");
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    // decor tufts/flowers (world coords -> screen)
+    for (const f of decor){
+      const sx=f.x-cam.x, sy=f.y-cam.y;
+      if (sx<-10||sx>W+10||sy<-10||sy>H+10) continue;
+      if (f.k==="tuft"){ ctx.strokeStyle="rgba(50,90,45,.5)"; ctx.lineWidth=2;
+        ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx-3,sy-6); ctx.moveTo(sx,sy); ctx.lineTo(sx,sy-7); ctx.moveTo(sx,sy); ctx.lineTo(sx+3,sy-6); ctx.stroke();
+      } else { ctx.fillStyle=f.c; ctx.beginPath(); ctx.arc(sx,sy,2.4,0,7); ctx.fill();
+        ctx.fillStyle="#f7e58a"; ctx.beginPath(); ctx.arc(sx,sy,1,0,7); ctx.fill(); }
     }
-    ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath(); ctx.fill();
   }
 
-  function drawGate() {
-    const g = GATE, x = g.x, top = g.y - g.h/2, bot = g.y + g.h/2;
-    // path to gate
-    ctx.fillStyle = "rgba(217,164,65,.25)";
-    ctx.beginPath(); ctx.moveTo(W-120, g.y-30); ctx.lineTo(x, top+10);
-    ctx.lineTo(x, bot-10); ctx.lineTo(W-120, g.y+30); ctx.closePath(); ctx.fill();
-    // posts
-    ctx.fillStyle = "#8a5a32";
-    ctx.fillRect(x-6, top, 10, g.h);
-    ctx.fillRect(W-12, top, 10, g.h);
-    // rails
-    ctx.strokeStyle = "#a06d3e"; ctx.lineWidth = 6;
-    for (const yy of [top+34, top+g.h*0.55]) {
-      ctx.beginPath(); ctx.moveTo(x-2, yy); ctx.lineTo(W-6, yy+6); ctx.stroke();
-    }
-    // sign
-    ctx.fillStyle = "#6f4a28"; ctx.fillRect(x-30, top-26, 58, 20);
-    ctx.fillStyle = "#ffe8b0"; ctx.font = "bold 12px Segoe UI"; ctx.textAlign="center";
-    ctx.fillText("HOME", x-1, top-12);
+  function drawGoalRing(x,y,rx,ry,label){
+    ctx.save(); ctx.globalAlpha=0.3+Math.sin(state.t*0.08)*0.12;
+    ctx.strokeStyle="#ffe8a8"; ctx.lineWidth=3; ctx.setLineDash([7,7]);
+    ctx.beginPath(); ctx.ellipse(x,y,rx,ry,0,0,7); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.globalAlpha=0.85; ctx.fillStyle="#fff7e0"; ctx.font="bold 12px Segoe UI"; ctx.textAlign="center";
+    ctx.fillText(label, x, y-ry-10); ctx.restore();
   }
 
-  function drawApple(a) {
-    const bob = Math.sin(state.t*0.05 + a.bob)*2;
-    ctx.save(); ctx.translate(a.x, a.y+bob);
-    ctx.fillStyle = "rgba(20,30,20,.18)";
-    ctx.beginPath(); ctx.ellipse(0,12,9,3,0,0,7); ctx.fill();
-    ctx.fillStyle = "#c43d2e";
-    ctx.beginPath(); ctx.arc(0,0,8,0,7); ctx.fill();
-    ctx.fillStyle = "#e25a44";
-    ctx.beginPath(); ctx.arc(-2.5,-2.5,3,0,7); ctx.fill();
-    ctx.strokeStyle="#6f4a28"; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.moveTo(0,-7); ctx.lineTo(2,-12); ctx.stroke();
-    ctx.fillStyle="#4f8a45";
-    ctx.beginPath(); ctx.ellipse(5,-11,4,2,0.6,0,7); ctx.fill();
-    ctx.restore();
-  }
+  // ---- sprites ----
+  function drawShadow(x,y,rx){ ctx.fillStyle="rgba(20,30,20,.22)"; ctx.beginPath(); ctx.ellipse(x,y,rx,rx*0.34,0,0,7); ctx.fill(); }
+  function drawZzz(x,y){ ctx.save(); ctx.fillStyle="#bfe1ff"; ctx.font="bold 13px Segoe UI"; ctx.textAlign="center";
+    const o=Math.sin(state.t*0.2)*2; ctx.fillText("z", x+8, y-22+o); ctx.fillText("z", x+13, y-30-o); ctx.restore(); }
 
-  function drawTree(t) {
-    const sway = Math.sin(state.t*0.02 + t.sway)*3;
-    // shadow
-    ctx.fillStyle = "rgba(20,30,20,.18)";
-    ctx.beginPath(); ctx.ellipse(t.x, t.y+30, 34, 10, 0, 0, 7); ctx.fill();
-    // trunk
-    ctx.fillStyle = "#7a5230";
-    ctx.fillRect(t.x-7, t.y-6, 14, 40);
-    // canopy (layered)
-    const greens = ["#3f7a38","#4f8f44","#62a657"];
-    greens.forEach((c,i)=>{
-      ctx.fillStyle = c;
-      ctx.beginPath();
-      ctx.arc(t.x-16+sway, t.y-14-i*4, 24-i*3, 0, 7);
-      ctx.arc(t.x+16+sway, t.y-14-i*4, 24-i*3, 0, 7);
-      ctx.arc(t.x+sway,     t.y-30-i*4, 28-i*3, 0, 7);
-      ctx.fill();
-    });
-  }
-
-  function drawShadow(x,y,rx){ ctx.fillStyle="rgba(20,30,20,.22)";
-    ctx.beginPath(); ctx.ellipse(x,y,rx,rx*0.34,0,0,7); ctx.fill(); }
-
-  function drawPeter(p) {
-    const bounce = Math.sin(p.step)*2.2;
-    const x=p.x, y=p.y+bounce, f=p.face;
-    drawShadow(x, p.y+16, 14);
+  function drawPeter(p){
+    const b=Math.sin(p.step)*2.2, x=p.x, y=p.y+b, f=p.face;
+    drawShadow(x,p.y+16,14);
     ctx.save(); ctx.translate(x,y); ctx.scale(f,1);
-    // legs
-    const sw = Math.sin(p.step*1.2)*4;
+    const sw=Math.sin(p.step*1.2)*4;
     ctx.strokeStyle="#33414b"; ctx.lineWidth=5; ctx.lineCap="round";
     ctx.beginPath(); ctx.moveTo(-3,8); ctx.lineTo(-3+sw,18); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(3,8);  ctx.lineTo(3-sw,18);  ctx.stroke();
-    // body (blue jacket)
-    ctx.fillStyle="#2f6db0";
-    ctx.beginPath(); ctx.roundRect(-9,-6,18,16,5); ctx.fill();
-    // arm
-    ctx.strokeStyle="#2f6db0"; ctx.lineWidth=5;
-    ctx.beginPath(); ctx.moveTo(6,-1); ctx.lineTo(11,6+sw*0.4); ctx.stroke();
-    // head
-    ctx.fillStyle="#f0c79b";
-    ctx.beginPath(); ctx.arc(2,-14,9,0,7); ctx.fill();
-    // hair
-    ctx.fillStyle="#5a3a1d";
-    ctx.beginPath(); ctx.arc(2,-17,9,Math.PI,0); ctx.fill();
-    // red cap
-    ctx.fillStyle="#c43d2e";
-    ctx.beginPath(); ctx.arc(2,-19,8,Math.PI,0); ctx.fill();
-    ctx.fillRect(-6,-20,16,3);
-    // eye
-    ctx.fillStyle="#26303a";
-    ctx.beginPath(); ctx.arc(6,-14,1.6,0,7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(3,8); ctx.lineTo(3-sw,18); ctx.stroke();
+    ctx.fillStyle="#2f6db0"; ctx.beginPath(); ctx.roundRect(-9,-6,18,16,5); ctx.fill();
+    ctx.strokeStyle="#2f6db0"; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(6,-1); ctx.lineTo(11,6+sw*0.4); ctx.stroke();
+    ctx.fillStyle="#f0c79b"; ctx.beginPath(); ctx.arc(2,-14,9,0,7); ctx.fill();
+    ctx.fillStyle="#5a3a1d"; ctx.beginPath(); ctx.arc(2,-17,9,Math.PI,0); ctx.fill();
+    ctx.fillStyle="#c43d2e"; ctx.beginPath(); ctx.arc(2,-19,8,Math.PI,0); ctx.fill(); ctx.fillRect(-6,-20,16,3);
+    ctx.fillStyle="#26303a"; ctx.beginPath(); ctx.arc(6,-14,1.6,0,7); ctx.fill();
     ctx.restore();
+    if (p.hasRope){ ctx.save(); ctx.strokeStyle="#caa15a"; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(x-10*f,y-2,6,0,7); ctx.stroke(); ctx.restore(); }
   }
 
-  function drawWolf(w) {
-    const bounce = Math.sin(w.step)*1.8;
-    const x=w.x, y=w.y+bounce, f=w.face;
-    drawShadow(x, w.y+18, 22);
+  function drawWolf(w){
+    const bnc=Math.sin(w.step)*1.8, x=w.x, y=w.y+bnc, f=w.face;
+    drawShadow(x,w.y+18,22);
     ctx.save(); ctx.translate(x,y); ctx.scale(f,1);
-    const hunting = w.mode==="hunt";
-    const body = hunting ? "#5a5e66" : "#6b6f77";
-    // legs
-    const sw = Math.sin(w.step*1.1)*5;
+    const hunting = w.stun<=0 && (w.mode==="hunt"||state.type!=="apples");
+    const body = w.stun>0 ? "#7d818a" : hunting?"#5a5e66":"#6b6f77";
+    const sw=Math.sin(w.step*1.1)*5;
     ctx.strokeStyle="#3c4046"; ctx.lineWidth=6; ctx.lineCap="round";
     ctx.beginPath(); ctx.moveTo(-10,10); ctx.lineTo(-10+sw,22); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(8,10);   ctx.lineTo(8-sw,22);   ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-6,10);  ctx.lineTo(-6-sw,22);  ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(12,10);  ctx.lineTo(12+sw,22);  ctx.stroke();
-    // tail
-    ctx.strokeStyle=body; ctx.lineWidth=9;
-    ctx.beginPath(); ctx.moveTo(-14,2);
-    ctx.quadraticCurveTo(-28,-2,-24-Math.sin(w.step)*3,8); ctx.stroke();
-    // body
-    ctx.fillStyle=body;
-    ctx.beginPath(); ctx.roundRect(-16,-8,30,18,9); ctx.fill();
-    // neck + head
+    ctx.beginPath(); ctx.moveTo(8,10); ctx.lineTo(8-sw,22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-6,10); ctx.lineTo(-6-sw,22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(12,10); ctx.lineTo(12+sw,22); ctx.stroke();
+    ctx.strokeStyle=body; ctx.lineWidth=9; ctx.beginPath(); ctx.moveTo(-14,2); ctx.quadraticCurveTo(-28,-2,-24-Math.sin(w.step)*3,8); ctx.stroke();
+    ctx.fillStyle=body; ctx.beginPath(); ctx.roundRect(-16,-8,30,18,9); ctx.fill();
     ctx.beginPath(); ctx.roundRect(8,-16,18,14,7); ctx.fill();
-    // snout
     ctx.beginPath(); ctx.moveTo(24,-12); ctx.lineTo(34,-7); ctx.lineTo(24,-3); ctx.fill();
-    // nose
     ctx.fillStyle="#1d2024"; ctx.beginPath(); ctx.arc(33,-7,2.2,0,7); ctx.fill();
-    // ear
-    ctx.fillStyle=body; ctx.beginPath();
-    ctx.moveTo(12,-16); ctx.lineTo(16,-26); ctx.lineTo(20,-15); ctx.fill();
-    // eye — glows red when hunting
-    ctx.fillStyle = hunting ? "#ff5a3c" : "#d9a441";
+    ctx.fillStyle=body; ctx.beginPath(); ctx.moveTo(12,-16); ctx.lineTo(16,-26); ctx.lineTo(20,-15); ctx.fill();
+    ctx.fillStyle = w.stun>0 ? "#9fb4ff" : hunting?"#ff5a3c":"#d9a441";
     ctx.beginPath(); ctx.arc(22,-10,2.2,0,7); ctx.fill();
-    if (hunting){ ctx.globalAlpha=0.5; ctx.beginPath(); ctx.arc(22,-10,4,0,7); ctx.fill(); ctx.globalAlpha=1; }
+    ctx.restore();
+    if (w.stun>0) drawZzz(x,y);
+  }
+
+  function drawCat(c){
+    const bnc=Math.sin(c.step)*1.6, x=c.x, y=c.y+bnc, f=c.face;
+    drawShadow(x,c.y+14,16);
+    ctx.save(); ctx.translate(x,y); ctx.scale(f,1);
+    const body = c.stun>0?"#8a8f98":"#6c727c";
+    const sw=Math.sin(c.step*1.1)*4;
+    ctx.strokeStyle="#41464e"; ctx.lineWidth=4; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(-7,8); ctx.lineTo(-7+sw,17); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(7,8); ctx.lineTo(7-sw,17); ctx.stroke();
+    // tail (curls up)
+    ctx.strokeStyle=body; ctx.lineWidth=5;
+    ctx.beginPath(); ctx.moveTo(-12,2); ctx.quadraticCurveTo(-22,-2,-18,-12); ctx.stroke();
+    ctx.fillStyle=body; ctx.beginPath(); ctx.roundRect(-13,-6,24,14,7); ctx.fill();   // body
+    ctx.beginPath(); ctx.arc(13,-9,8,0,7); ctx.fill();                                 // head
+    ctx.beginPath(); ctx.moveTo(8,-15); ctx.lineTo(11,-23); ctx.lineTo(15,-16); ctx.fill();  // ears
+    ctx.beginPath(); ctx.moveTo(15,-16); ctx.lineTo(19,-23); ctx.lineTo(21,-14); ctx.fill();
+    // stripes
+    ctx.strokeStyle="rgba(40,44,50,.5)"; ctx.lineWidth=2;
+    for (const sx of [-6,-1,4]){ ctx.beginPath(); ctx.moveTo(sx,-6); ctx.lineTo(sx,6); ctx.stroke(); }
+    ctx.fillStyle = c.stun>0?"#9fb4ff":"#bfe35a"; ctx.beginPath(); ctx.arc(16,-9,1.8,0,7); ctx.fill();  // eye
+    ctx.strokeStyle="rgba(255,255,255,.6)"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(20,-8); ctx.lineTo(28,-9); ctx.moveTo(20,-7); ctx.lineTo(28,-6); ctx.stroke();
+    ctx.restore();
+    if (c.stun>0) drawZzz(x,y);
+  }
+
+  function drawDuck(){
+    const onLand = state.type!=="apples";
+    const sink=duck.dive*9;
+    if (duck.gone) return;
+    if (onLand) drawShadow(duck.x,duck.y+9,11);
+    ctx.save(); ctx.translate(duck.x,duck.y); ctx.scale(duck.face>=0?1:-1,1);
+    if (!onLand){ ctx.strokeStyle="rgba(255,255,255,.35)"; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.moveTo(-10,4); ctx.lineTo(-22,1); ctx.moveTo(-10,7); ctx.lineTo(-20,9); ctx.stroke(); }
+    ctx.globalAlpha=1-duck.dive*0.75;
+    const wob = onLand ? Math.sin(state.t*0.25)*1.4*((Math.abs(duck.vx||0)+Math.abs(duck.vy||0))>0.3?1:0) : 0;
+    ctx.fillStyle="#f4f1e8";
+    ctx.beginPath(); ctx.ellipse(0,2+sink+wob,11,7,0,0,7); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-9,sink); ctx.lineTo(-16,-3+sink); ctx.lineTo(-9,4+sink); ctx.fill();
+    ctx.beginPath(); ctx.arc(8,-5+sink,5,0,7); ctx.fill();
+    if (onLand){ ctx.strokeStyle="#e6a23c"; ctx.lineWidth=2; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(-1,8); ctx.lineTo(-1-wob,13); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(3,8); ctx.lineTo(3+wob,13); ctx.stroke(); }
+    ctx.fillStyle="#e6a23c"; ctx.beginPath(); ctx.moveTo(12,-6+sink); ctx.lineTo(19,-4+sink); ctx.lineTo(12,-2+sink); ctx.fill();
+    ctx.fillStyle="#26303a"; ctx.beginPath(); ctx.arc(9,-6+sink,1.1,0,7); ctx.fill();
+    ctx.restore(); ctx.globalAlpha=1;
+    if (onLand && !duck.safe){ ctx.save(); ctx.textAlign="center"; ctx.font="13px Segoe UI";
+      if (duck.following){ ctx.fillStyle="#e35d6a"; ctx.fillText("♥",duck.x,duck.y-14); } ctx.restore(); }
+  }
+
+  function drawBird(){
+    if (bird.gone) return;
+    const hop = bird.following||bird.panic ? Math.abs(Math.sin(bird.hop))*4 : 0;
+    const x=bird.x, y=bird.y-hop;
+    drawShadow(x,bird.y+6,8);
+    ctx.save(); ctx.translate(x,y); ctx.scale(bird.face>=0?1:-1,1);
+    ctx.fillStyle="#3f9bd6"; ctx.beginPath(); ctx.ellipse(0,0,8,6,0,0,7); ctx.fill();
+    ctx.fillStyle="#ffd45e"; ctx.beginPath(); ctx.ellipse(-1,3,4,3,0,0,7); ctx.fill();
+    ctx.fillStyle="#3f9bd6"; ctx.beginPath(); ctx.arc(6,-4,4.5,0,7); ctx.fill();
+    ctx.fillStyle="#e6a23c"; ctx.beginPath(); ctx.moveTo(10,-4); ctx.lineTo(15,-3); ctx.lineTo(10,-2); ctx.fill();
+    ctx.fillStyle="#1d2530"; ctx.beginPath(); ctx.arc(7,-5,1,0,7); ctx.fill();
+    ctx.strokeStyle="#e6a23c"; ctx.lineWidth=1.5; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(-1,6); ctx.lineTo(-2,9); ctx.moveTo(2,6); ctx.lineTo(3,9); ctx.stroke();
+    ctx.fillStyle="#2f7db0"; ctx.beginPath(); ctx.ellipse(-2,-1,5,3,-0.4,0,7); ctx.fill();
+    ctx.restore();
+    if (!bird.safe){ ctx.save(); ctx.textAlign="center"; ctx.font="13px Segoe UI";
+      if (bird.following){ ctx.fillStyle="#e35d6a"; ctx.fillText("♥",x,y-14); } ctx.restore(); }
+  }
+
+  function drawGrandpa(g){
+    const x=g.x, y=g.y+Math.sin(g.step)*1, f=g.face;
+    drawShadow(x,g.y+18,15);
+    ctx.save(); ctx.translate(x,y); ctx.scale(f,1);
+    ctx.strokeStyle="#3a3026"; ctx.lineWidth=5; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(-3,10); ctx.lineTo(-3,22); ctx.moveTo(4,10); ctx.lineTo(4,22); ctx.stroke();
+    ctx.fillStyle="#3f6b46"; ctx.beginPath(); ctx.roundRect(-10,-8,20,20,6); ctx.fill();   // green coat
+    ctx.fillStyle="#e9d6b8"; ctx.beginPath(); ctx.arc(0,-16,9,0,7); ctx.fill();             // head
+    ctx.fillStyle="#efe9e0"; ctx.beginPath(); ctx.arc(0,-10,7,0,Math.PI); ctx.fill();       // beard
+    ctx.fillStyle="#6e4a2c"; ctx.beginPath(); ctx.arc(0,-19,9,Math.PI,0); ctx.fill(); ctx.fillRect(-9,-20,18,3);  // hat
+    ctx.fillStyle="#26303a"; ctx.beginPath(); ctx.arc(4,-16,1.4,0,7); ctx.fill();
+    ctx.strokeStyle="#7a5230"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(10,-2); ctx.lineTo(14,22); ctx.stroke(); // cane
     ctx.restore();
   }
 
-  function drawPond(p) {
+  function drawObstacle(o){
+    if (o.kind==="tree") drawTree(o);
+    else if (o.kind==="rock") drawRock(o);
+    else drawCliff(o);
+  }
+  function drawTree(t){
+    const sway=Math.sin(state.t*0.02 + (t.x+t.y))*3;
+    ctx.fillStyle="rgba(20,30,20,.18)"; ctx.beginPath(); ctx.ellipse(t.x,t.y+22,30,9,0,0,7); ctx.fill();
+    ctx.fillStyle="#7a5230"; ctx.fillRect(t.x-6,t.y-6,12,30);
+    const greens=["#3f7a38","#4f8f44","#62a657"];
+    greens.forEach((c,i)=>{ ctx.fillStyle=c; ctx.beginPath();
+      ctx.arc(t.x-15+sway,t.y-16-i*4,22-i*3,0,7); ctx.arc(t.x+15+sway,t.y-16-i*4,22-i*3,0,7);
+      ctx.arc(t.x+sway,t.y-30-i*4,26-i*3,0,7); ctx.fill(); });
+  }
+  function drawRock(o){
+    ctx.fillStyle="rgba(20,30,20,.2)"; ctx.beginPath(); ctx.ellipse(o.x,o.y+o.r*0.7,o.r*1.05,o.r*0.4,0,0,7); ctx.fill();
+    const g=ctx.createLinearGradient(o.x,o.y-o.r,o.x,o.y+o.r); g.addColorStop(0,"#9aa1a8"); g.addColorStop(1,"#6b7178");
+    ctx.fillStyle=g; ctx.beginPath();
+    ctx.moveTo(o.x-o.r,o.y+o.r*0.5); ctx.quadraticCurveTo(o.x-o.r*1.05,o.y-o.r*0.6,o.x-o.r*0.3,o.y-o.r*0.8);
+    ctx.quadraticCurveTo(o.x+o.r*0.6,o.y-o.r,o.x+o.r,o.y-o.r*0.1);
+    ctx.quadraticCurveTo(o.x+o.r*1.05,o.y+o.r*0.6,o.x+o.r*0.4,o.y+o.r*0.7); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle="rgba(255,255,255,.18)"; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(o.x-o.r*0.4,o.y-o.r*0.3); ctx.lineTo(o.x+o.r*0.2,o.y); ctx.stroke();
+    if (o.kind==="rock" && o.checked){ ctx.fillStyle="#6b4a2c"; for(let i=0;i<4;i++){ const a=i/4*7; ctx.beginPath(); ctx.arc(o.x+Math.cos(a)*(o.r+5),o.y+o.r*0.6+Math.sin(a)*3,1.6,0,7); ctx.fill(); } }
+  }
+  function drawCliff(o){
+    ctx.fillStyle="rgba(20,30,20,.22)"; ctx.beginPath(); ctx.ellipse(o.x,o.y+o.r*0.7,o.r*1.1,o.r*0.4,0,0,7); ctx.fill();
+    for (const [dx,dy,r,c] of [[-12,6,o.r*0.8,"#5f656c"],[14,2,o.r*0.7,"#6b7178"],[0,-8,o.r*0.9,"#838a92"]]){
+      ctx.fillStyle=c; ctx.beginPath(); ctx.arc(o.x+dx,o.y+dy,r,0,7); ctx.fill();
+    }
+    ctx.fillStyle="#525860"; ctx.beginPath(); ctx.arc(o.x-6,o.y,o.r*0.5,0,7); ctx.fill();
+  }
+
+  function drawApple(a){
+    const bob=Math.sin(state.t*0.05+a.bob)*2;
+    ctx.save(); ctx.translate(a.x,a.y+bob);
+    ctx.fillStyle="rgba(20,30,20,.18)"; ctx.beginPath(); ctx.ellipse(0,12,9,3,0,0,7); ctx.fill();
+    ctx.fillStyle="#c43d2e"; ctx.beginPath(); ctx.arc(0,0,8,0,7); ctx.fill();
+    ctx.fillStyle="#e25a44"; ctx.beginPath(); ctx.arc(-2.5,-2.5,3,0,7); ctx.fill();
+    ctx.strokeStyle="#6f4a28"; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,-7); ctx.lineTo(2,-12); ctx.stroke();
+    ctx.fillStyle="#4f8a45"; ctx.beginPath(); ctx.ellipse(5,-11,4,2,0.6,0,7); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawProjectile(p){
+    ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.spin);
+    ctx.fillStyle="#c43d2e"; ctx.beginPath(); ctx.arc(0,0,6,0,7); ctx.fill();
+    ctx.fillStyle="#e25a44"; ctx.beginPath(); ctx.arc(-2,-2,2,0,7); ctx.fill();
+    ctx.fillStyle="#4f8a45"; ctx.beginPath(); ctx.ellipse(3,-6,3,1.5,0.6,0,7); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawPond(p){
     ctx.save();
-    ctx.fillStyle = "rgba(20,40,30,.14)";
-    ctx.beginPath(); ctx.ellipse(p.x, p.y+6, p.rx+6, p.ry+4, 0, 0, 7); ctx.fill();
-    const wg = ctx.createRadialGradient(p.x, p.y-8, 8, p.x, p.y, p.rx);
-    wg.addColorStop(0, "#83c8da"); wg.addColorStop(1, "#3f8fa8");
-    ctx.fillStyle = wg;
-    ctx.beginPath(); ctx.ellipse(p.x, p.y, p.rx, p.ry, 0, 0, 7); ctx.fill();
-    // reeds
-    ctx.strokeStyle = "#4f8a45"; ctx.lineWidth = 3; ctx.lineCap = "round";
-    for (const rx of [-p.rx+10, -p.rx+2, p.rx-6]) {
-      ctx.beginPath(); ctx.moveTo(p.x+rx, p.y-p.ry+4);
-      ctx.quadraticCurveTo(p.x+rx-4, p.y-p.ry-12, p.x+rx-2, p.y-p.ry-20); ctx.stroke();
-    }
-    // ripples
-    ctx.strokeStyle = "rgba(255,255,255,.3)"; ctx.lineWidth = 1.5;
-    for (let i=0;i<3;i++){
-      const rr = (state.t*0.4 + i*30) % p.rx;
-      ctx.globalAlpha = 0.4*(1-rr/p.rx);
-      ctx.beginPath(); ctx.ellipse(p.x, p.y, rr*0.9+6, rr*0.5+3, 0, 0, 7); ctx.stroke();
-    }
-    ctx.globalAlpha = 1; ctx.restore();
+    ctx.fillStyle="rgba(20,40,30,.14)"; ctx.beginPath(); ctx.ellipse(p.x,p.y+6,p.rx+6,p.ry+4,0,0,7); ctx.fill();
+    const wg=ctx.createRadialGradient(p.x,p.y-8,8,p.x,p.y,p.rx); wg.addColorStop(0,"#83c8da"); wg.addColorStop(1,"#3f8fa8");
+    ctx.fillStyle=wg; ctx.beginPath(); ctx.ellipse(p.x,p.y,p.rx,p.ry,0,0,7); ctx.fill();
+    ctx.strokeStyle="#4f8a45"; ctx.lineWidth=3; ctx.lineCap="round";
+    for (const rx of [-p.rx+10,-p.rx+2,p.rx-6]){ ctx.beginPath(); ctx.moveTo(p.x+rx,p.y-p.ry+4); ctx.quadraticCurveTo(p.x+rx-4,p.y-p.ry-12,p.x+rx-2,p.y-p.ry-20); ctx.stroke(); }
+    ctx.strokeStyle="rgba(255,255,255,.3)"; ctx.lineWidth=1.5;
+    for (let i=0;i<3;i++){ const rr=(state.t*0.4+i*30)%p.rx; ctx.globalAlpha=0.4*(1-rr/p.rx);
+      ctx.beginPath(); ctx.ellipse(p.x,p.y,rr*0.9+6,rr*0.5+3,0,0,7); ctx.stroke(); }
+    ctx.globalAlpha=1; ctx.restore();
   }
 
-  function drawDuck() {
-    const onLand = state.type === "rescue";
-    const sink = duck.dive*9;
-    if (duck.eaten) return;               // gone — the wolf got her
-    if (onLand) drawShadow(duck.x, duck.y+9, 11);
-    ctx.save(); ctx.translate(duck.x, duck.y);
-    ctx.scale(duck.face >= 0 ? 1 : -1, 1);
-    if (!onLand) {                        // water wake while swimming
-      ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(-10,4); ctx.lineTo(-22,1);
-      ctx.moveTo(-10,7); ctx.lineTo(-20,9); ctx.stroke();
-    }
-    ctx.globalAlpha = 1 - duck.dive*0.75;
-    const waddle = onLand ? Math.sin(state.t*0.25)*1.5*(Math.abs(duck.vx||0)+Math.abs(duck.vy||0) > 0.3 ? 1 : 0) : 0;
-    ctx.fillStyle = "#f4f1e8";
-    ctx.beginPath(); ctx.ellipse(0, 2+sink+waddle, 11, 7, 0, 0, 7); ctx.fill();   // body
-    ctx.beginPath(); ctx.moveTo(-9,sink); ctx.lineTo(-16,-3+sink); ctx.lineTo(-9,4+sink); ctx.fill(); // tail
-    ctx.beginPath(); ctx.arc(8,-5+sink,5,0,7); ctx.fill();                        // head
-    if (onLand) {                         // orange legs on dry land
-      ctx.strokeStyle = "#e6a23c"; ctx.lineWidth = 2; ctx.lineCap = "round";
-      ctx.beginPath(); ctx.moveTo(-1,8); ctx.lineTo(-1-waddle,13); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(3,8);  ctx.lineTo(3+waddle,13);  ctx.stroke();
-    }
-    ctx.fillStyle = "#e6a23c";
-    ctx.beginPath(); ctx.moveTo(12,-6+sink); ctx.lineTo(19,-4+sink); ctx.lineTo(12,-2+sink); ctx.fill(); // bill
-    ctx.fillStyle = "#26303a"; ctx.beginPath(); ctx.arc(9,-6+sink,1.1,0,7); ctx.fill();  // eye
-    ctx.restore(); ctx.globalAlpha = 1;
-    // rescue mood indicator
-    if (onLand && !duck.safe) {
-      ctx.save(); ctx.textAlign = "center"; ctx.font = "13px Segoe UI";
-      if (duck.following) { ctx.fillStyle = "#e35d6a"; ctx.fillText("♥", duck.x, duck.y-14); }
-      else if (duck.panic) { ctx.fillStyle = "#c43d2e"; ctx.font = "bold 15px Segoe UI"; ctx.fillText("!", duck.x, duck.y-14); }
-      ctx.restore();
-    }
+  function drawGate(){
+    const g=gate, x=g.x, top=g.y-g.h/2;
+    ctx.fillStyle="rgba(217,164,65,.25)"; ctx.beginPath();
+    ctx.moveTo(W-120,g.y-30); ctx.lineTo(x,top+10); ctx.lineTo(x,top+g.h-10); ctx.lineTo(W-120,g.y+30); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#8a5a32"; ctx.fillRect(x-6,top,10,g.h); ctx.fillRect(W-12,top,10,g.h);
+    ctx.strokeStyle="#a06d3e"; ctx.lineWidth=6;
+    for (const yy of [top+34, top+g.h*0.55]){ ctx.beginPath(); ctx.moveTo(x-2,yy); ctx.lineTo(W-6,yy+6); ctx.stroke(); }
+    ctx.fillStyle="#6f4a28"; ctx.fillRect(x-30,top-26,58,20);
+    ctx.fillStyle="#ffe8b0"; ctx.font="bold 12px Segoe UI"; ctx.textAlign="center"; ctx.fillText("HOME",x-1,top-12);
   }
 
-  function drawOak(o) {
-    const sway = Math.sin(state.t*0.015)*3;
-    ctx.fillStyle = "rgba(20,30,20,.2)";
-    ctx.beginPath(); ctx.ellipse(o.x, o.y+38, 50, 13, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = "#6e4824"; ctx.fillRect(o.x-11, o.y-10, 22, 52);
-    // branch the rope hangs from
-    ctx.strokeStyle = "#6e4824"; ctx.lineWidth = 8; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(o.x, o.y-4); ctx.lineTo(o.x+34, o.y-18); ctx.stroke();
-    const greens = ["#356b30","#46823c","#5a9c4e"];
-    greens.forEach((c,i)=>{
-      ctx.fillStyle = c; ctx.beginPath();
-      ctx.arc(o.x-26+sway, o.y-26-i*5, 34-i*4, 0, 7);
-      ctx.arc(o.x+24+sway, o.y-26-i*5, 34-i*4, 0, 7);
-      ctx.arc(o.x+sway,    o.y-48-i*5, 40-i*4, 0, 7);
-      ctx.fill();
-    });
+  function drawOak(o){
+    const sway=Math.sin(state.t*0.015)*3;
+    ctx.fillStyle="rgba(20,30,20,.2)"; ctx.beginPath(); ctx.ellipse(o.x,o.y+o.r*0.8,o.r*1.2,o.r*0.3,0,0,7); ctx.fill();
+    ctx.fillStyle="#6e4824"; ctx.fillRect(o.x-12,o.y-10,24,o.r+10);
+    ctx.strokeStyle="#6e4824"; ctx.lineWidth=9; ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(o.x,o.y-4); ctx.lineTo(o.x+38,o.y-20); ctx.stroke();
+    const greens=["#356b30","#46823c","#5a9c4e"];
+    greens.forEach((c,i)=>{ ctx.fillStyle=c; ctx.beginPath();
+      ctx.arc(o.x-30+sway,o.y-28-i*6,40-i*5,0,7); ctx.arc(o.x+28+sway,o.y-28-i*6,40-i*5,0,7);
+      ctx.arc(o.x+sway,o.y-54-i*6,46-i*5,0,7); ctx.fill(); });
+    if (trap && trap.armed && state.type==="rope"){ ctx.strokeStyle="#caa15a"; ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.moveTo(o.x+38,o.y-20); ctx.lineTo(trap.x,trap.y); ctx.stroke(); drawRope(trap.x,trap.y,true); }
   }
 
-  function drawTrap(tr) {
-    if (!tr) return;                       // no trap in the rescue level
+  function drawTrapCoil(tr){
     ctx.save();
-    if (tr.armed) {   // rope drops from the oak branch
-      ctx.strokeStyle = "#caa15a"; ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.moveTo(oak.x+34, oak.y-18); ctx.lineTo(tr.x, tr.y); ctx.stroke();
-      ctx.globalAlpha = 0.22 + Math.sin(state.t*0.12)*0.12;
-      ctx.fillStyle = "#e7c46b";
-      ctx.beginPath(); ctx.ellipse(tr.x, tr.y, tr.r+7, (tr.r+7)*0.5, 0, 0, 7); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-    const pulse = tr.armed ? 1 + Math.sin(state.t*0.12)*0.1 : 1;
-    ctx.translate(tr.x, tr.y); ctx.scale(1, 0.5);
-    ctx.strokeStyle = tr.armed ? "#e7c46b" : "#9b8a63";
-    ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0,0,tr.r*pulse,0,7); ctx.stroke();
-    ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(0,0,tr.r*0.66*pulse,0,7); ctx.stroke();
+    if (tr.armed){ ctx.strokeStyle="#caa15a"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(oak.x+34,oak.y-18); ctx.lineTo(tr.x,tr.y); ctx.stroke();
+      ctx.globalAlpha=0.22+Math.sin(state.t*0.12)*0.12; ctx.fillStyle="#e7c46b"; ctx.beginPath(); ctx.ellipse(tr.x,tr.y,tr.r+7,(tr.r+7)*0.5,0,0,7); ctx.fill(); ctx.globalAlpha=1; }
+    const pulse=tr.armed?1+Math.sin(state.t*0.12)*0.1:1;
+    ctx.translate(tr.x,tr.y); ctx.scale(1,0.5);
+    ctx.strokeStyle=tr.armed?"#e7c46b":"#9b8a63"; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(0,0,tr.r*pulse,0,7); ctx.stroke();
+    ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(0,0,tr.r*0.66*pulse,0,7); ctx.stroke();
     ctx.restore();
   }
 
-  function drawBird(b) {
-    const fl = Math.sin(b.flutter)*6;
-    ctx.save(); ctx.translate(b.x, b.y);
-    ctx.scale(b.vx >= 0 ? 1 : -1, 1);
-    ctx.fillStyle = "#3f9bd6";
-    ctx.beginPath(); ctx.ellipse(0,0,7,5,0,0,7); ctx.fill();          // body
-    ctx.fillStyle = "#ffd45e";
-    ctx.beginPath(); ctx.ellipse(-1,2,4,3,0,0,7); ctx.fill();         // belly
-    ctx.fillStyle = "#3f9bd6";
-    ctx.beginPath(); ctx.arc(6,-3,4,0,7); ctx.fill();                 // head
-    ctx.fillStyle = "#e6a23c";
-    ctx.beginPath(); ctx.moveTo(9,-3); ctx.lineTo(14,-2); ctx.lineTo(9,-1); ctx.fill();  // beak
-    ctx.fillStyle = "#1d2530"; ctx.beginPath(); ctx.arc(7,-4,1,0,7); ctx.fill();         // eye
-    ctx.fillStyle = "#2f7db0";
-    ctx.beginPath(); ctx.ellipse(-2,-2-fl*0.4,6,3,-0.5-fl*0.05,0,7); ctx.fill();         // wing
+  function drawRope(x,y,armed){
+    ctx.save(); ctx.translate(x,y); ctx.scale(1,0.5);
+    const pulse = armed?1:1+Math.sin(state.t*0.12)*0.12;
+    ctx.strokeStyle="#caa15a"; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(0,0,15*pulse,0,7); ctx.stroke();
+    ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(0,0,9*pulse,0,7); ctx.stroke();
     ctx.restore();
+    if (!armed){ ctx.save(); ctx.globalAlpha=0.3+Math.sin(state.t*0.15)*0.15; ctx.fillStyle="#ffe8a8";
+      ctx.font="bold 12px Segoe UI"; ctx.textAlign="center"; ctx.fillText("🪢 rope!", x, y-16); ctx.restore(); }
   }
 
-  // ================= GAME FLOW =================
-  let raf = null;
-  function loop() {
-    if (state.mode === "play") update();
-    draw();
-    raf = requestAnimationFrame(loop);
-  }
+  // ================= FLOW =================
+  function loop(){ if (state.mode==="play") update(); draw(); requestAnimationFrame(loop); }
 
-  function showModal(title, body, btn) {
-    mTitle.textContent = title;
-    mBody.innerHTML = body;
-    startBtn.textContent = btn;
-    overlay.classList.add("show");
-  }
+  function showModal(title, body, btn){ mTitle.textContent=title; mBody.innerHTML=body; startBtn.textContent=btn; overlay.classList.add("show"); }
   function hideModal(){ overlay.classList.remove("show"); }
+  function setCrest(e){ const c=document.querySelector(".modal .crest"); if (c) c.textContent=e; }
 
-  function startRound() {
+  function startRound(){
     makeLevel(state.round);
-    hideModal();
-    state.mode = "play";
-    Audio.setTheme(state.type === "rescue" ? "duck" : "peter");  // the level's leitmotif
-    Audio.musicStart();
+    hideModal(); state.mode="play";
+    Audio.setLevel(state.type); Audio.musicStart();
   }
 
-  function tryTrap() {
-    if (state.mode !== "play" || !trap || !trap.armed) return;
-    const wolfOnRope  = Math.hypot(wolf.x-trap.x, wolf.y-trap.y) < trap.r + wolf.r;
-    const peterNear   = Math.hypot(peter.x-trap.x, peter.y-trap.y) < 82;
-    if (wolfOnRope && peterNear) winCapture();
-    else if (peterNear) flash("Lure the wolf onto the rope, then press SPACE!");
-  }
-
-  function setCrest(emoji){ const c = document.querySelector(".modal .crest"); if (c) c.textContent = emoji; }
-
-  // win → preview & start the next level (levels cycle, difficulty rises)
-  function advance(crest, title, story, sound) {
-    state.mode = "won"; Audio.musicStop();
-    (sound === "capture" ? Audio.capture : Audio.win)();
-    const nx = LEVELS[levelIndexFor(state.round + 1)];
-    setCrest(crest);
+  function advance(crest, title, story, sound){
+    state.mode="won"; Audio.musicStop(); (sound==="capture"?Audio.capture:Audio.win)();
+    const nx=LEVELS[levelIndexFor(state.round+1)]; setCrest(crest);
     showModal(title, `${story}<br><br><b>Next — ${nx.name}:</b> ${nx.brief}`, `Begin: ${nx.name} ▶`);
-    startBtn.onclick = () => { state.round++; startRound(); };
+    startBtn.onclick=()=>{ state.round++; startRound(); };
   }
+  const winEscape  = () => advance("🏡","Safe at home! 🏡",`Peter slipped through the gate with <b>all ${state.need} apples</b> — the wolf never caught him.`,"win");
+  const winCapture = () => advance("🎉","Peter caught the wolf! 🎉",`With a loop of rope from the old oak, Peter caught the wolf by the tail — just like in the story! 🎺`,"capture");
+  const winBird    = () => advance("🐦","The bird is safe! 🐦",`Peter froze the cat with well-aimed apples and walked the little bird up into the tall tree, far out of reach.`,"win");
+  const winDuck    = () => advance("🦆","The duck is safe! 🦆",`Across the whole meadow, dodging rocks and stunning the wolf, Peter led the duck home to her pond. A brave rescue!`,"win");
+  const winRope    = () => advance("🪢","The wolf is trapped! 🪢",`Peter found the hidden rope, lured the wolf to the great oak, and he and Grandpa tied him fast. The hunters can take him to the zoo!`,"capture");
 
-  function win() {        // escaped through the gate (apples level)
-    advance("🏡", "Safe at home! 🏡",
-      `Peter slipped through the gate with <b>all ${state.total} apples</b> — the wolf never caught him.`, "win");
-  }
-  function winCapture() { // trapped the wolf (apples level, hero's ending)
-    advance("🎉", "Peter caught the wolf! 🎉",
-      `With a loop of rope from the old oak, Peter caught the wolf by the tail — just like in the story! ` +
-      `The hunters came marching out of the forest, and Peter led the grand parade. 🎺`, "capture");
-  }
-  function winRescue() {  // led the duck to safety (rescue level)
-    advance("🦆", "The duck is safe! 🦆",
-      `Peter reached the duck just in time and led her back to the pond — the wolf snapped at empty air. A brave rescue!`, "win");
-  }
-
-  function lose() {
-    state.mode = "lost";
-    Audio.musicStop(); Audio.lose();
-    setCrest("🐺");
-    if (state.type === "rescue" && duck && duck.eaten) {
-      showModal("The wolf ate the duck! 🐺",
-        `The wolf reached the poor duck before she could waddle to safety. ` +
-        `Get to her sooner next time so she follows you, and let the bird slow the wolf down.`,
-        "Try again ↺");
-    } else {
-      showModal("The wolf caught Peter! 🐺",
-        `So sharp were the wolf's senses that it found Peter among the grass.` +
-        `<br><br>Don't worry — in this tale, everyone gets another chance. Move softly and use the trees as cover.`,
-        "Try again ↺");
-    }
-    startBtn.onclick = () => { startRound(); };
-  }
-
-  function togglePause() {
-    if (state.mode === "play") {
-      state.mode = "pause";
-      showModal("Paused", "Take a breath. The meadow will wait.", "Resume");
-      startBtn.onclick = () => { hideModal(); state.mode="play"; };
-    }
-  }
-
-  // first start
-  startBtn.onclick = () => { state.round = 1; startRound(); };
-
-  // build a scene immediately so the meadow shows behind the menu (mode stays "menu")
-  makeLevel(state.round);
-
-  // roundRect polyfill (older canvases)
-  if (!CanvasRenderingContext2D.prototype.roundRect) {
-    CanvasRenderingContext2D.prototype.roundRect = function(x,y,w,h,r){
-      this.beginPath(); this.moveTo(x+r,y);
-      this.arcTo(x+w,y,x+w,y+h,r); this.arcTo(x+w,y+h,x,y+h,r);
-      this.arcTo(x,y+h,x,y,r); this.arcTo(x,y,x+w,y,r); this.closePath(); return this;
+  function lose(why){
+    state.mode="lost"; Audio.musicStop(); Audio.lose(); setCrest("🐺");
+    const msgs = {
+      caught:["The wolf caught Peter! 🐺","So sharp were the wolf's senses that it found Peter among the grass. Move softly, throw apples, and use cover."],
+      bird:  ["The cat caught the bird! 🐱","The cat pounced before the bird reached the tree. Freeze it with apples and keep the bird close to you."],
+      duck:  ["The wolf caught the duck! 🐺","Get to the duck sooner so she follows, stun the wolf with apples, and use the rocks as cover."],
     };
+    const [t,b] = msgs[why] || msgs.caught;
+    showModal(t, b, "Try again ↺"); startBtn.onclick=()=>{ startRound(); };
   }
 
+  function togglePause(){
+    if (state.mode==="play"){ state.mode="pause"; setCrest("⏸"); showModal("Paused","Take a breath. The meadow will wait.","Resume"); startBtn.onclick=()=>{ hideModal(); state.mode="play"; }; }
+  }
+
+  startBtn.onclick = () => { state.round=1; startRound(); };
+  makeLevel(state.round);   // populate a scene behind the menu
+
+  if (!CanvasRenderingContext2D.prototype.roundRect){
+    CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){ this.beginPath(); this.moveTo(x+r,y);
+      this.arcTo(x+w,y,x+w,y+h,r); this.arcTo(x+w,y+h,x,y+h,r); this.arcTo(x,y+h,x,y,r); this.arcTo(x,y,x+w,y,r); this.closePath(); return this; };
+  }
   loop();
 })();
 </script>

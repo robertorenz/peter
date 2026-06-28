@@ -16,3 +16,9 @@ omr/xml/
 omr/*.log
 omr/progress.log
 *.omr
+
+# audio render toolchain (large downloads, regenerable)
+tools/fluidsynth/
+tools/fluidsynth.zip
+tools/*.sf3
+tools/*.sf2
