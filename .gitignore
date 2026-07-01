@@ -22,3 +22,10 @@ tools/fluidsynth/
 tools/fluidsynth.zip
 tools/*.sf3
 tools/*.sf2
+
+# desktop (Electron) build — only the recipe is versioned
+desktop/node_modules/
+desktop/dist/
+desktop/index.html
+desktop/audio/
+desktop/package-lock.json

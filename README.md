@@ -14,6 +14,21 @@ The game **fills the whole browser window**: on big screens everything — the m
 the HUD, the story cards — scales up together (with the canvas re-rendered at full
 resolution, so it stays crisp), and on small screens it shrinks to fit.
 
+### 🖥️ Windows exe
+
+A standalone desktop build (game + orchestral music, no browser needed) lives in
+`desktop/`. To build the portable exe:
+
+```
+cd desktop
+npm install
+npm run dist        # → desktop/dist/PeterAndTheWolf.exe (single portable file)
+```
+
+`npm run dist` copies the current `index.html` and `audio/` from the repo root,
+then packages them with Electron. `desktop/dist/win-unpacked/` holds the same app
+as a folder if you prefer not to use the portable exe.
+
 ## 🎮 Controls
 
 | Action | Keys |
