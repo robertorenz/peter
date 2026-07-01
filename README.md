@@ -33,6 +33,11 @@ Open `index.html` in any modern browser. That's it.
   where the noose dangles and sways; springing it plays a full cutscene — the rope
   snaps around the wolf's tail, yanks it under the branch and **hauls it up into the
   tree**, upside-down and kicking, while Grandpa hurries over and the branch creaks.
+- **The Triumphal Procession**: after every capture, a letterboxed, skippable parade
+  cutscene plays to the Hunters' March — Peter marches in front with a golden pennant,
+  the bird loops overhead, **two hunters carry the sleeping wolf slung from a pole**,
+  and Grandpa, the cat and the duck follow through a sunset meadow under falling
+  confetti. Press `Space` (or tap) to skip.
 - **A minimap** in the corner of every big scrolling level shows friends, foes and the goal.
 - **Each level has its own light**: day meadow, golden afternoon with drifting leaves,
   blue dusk, and a night forest full of fireflies.

@@ -193,6 +193,8 @@
   const lvlName = document.getElementById("lvlName");
   const heartPill = document.getElementById("heartPill");
   const scorePill = document.getElementById("scorePill");
+  const hudEl   = document.querySelector(".hud");
+  const meterEl = document.querySelector(".meter");
   const alertFill = document.getElementById("alertFill");
   const meterLabel = document.getElementById("meterLabel");
 
@@ -282,6 +284,14 @@
         if (p && p.catch) p.catch(() => fallbackSynth());
       },
       musicStop(){ musicOn=false; if (track) try { track.pause(); } catch(e){} },
+      paradeMusic(){                              // the Hunters' March for the procession
+        ensure(); musicOn=false;
+        const fb=()=>{ setTheme("hunters"); startSynth(); };
+        if (!track){ fb(); return; }
+        nowPlaying="audio/hunters.wav"; track.muted=muted;
+        try { track.src=nowPlaying; track.currentTime=0; } catch(e){ fb(); return; }
+        const p=track.play(); if (p && p.catch) p.catch(fb);
+      },
       musicTick,
       toggle(){ muted=!muted; if (track) track.muted = muted; return muted; },
       get muted(){ return muted; }
@@ -295,7 +305,11 @@
   addEventListener("keydown", (e) => {
     const k = e.key.toLowerCase();
     if (KEYMAP[k]) { keys[KEYMAP[k]] = true; e.preventDefault(); }
-    if (k === " ") { e.preventDefault(); if (!keys.space) { keys.space = true; doAction(); } }
+    if (k === " " || k === "enter") {
+      e.preventDefault();
+      if (state.mode==="parade") { endParade(); return; }
+      if (k === " " && !keys.space) { keys.space = true; doAction(); }
+    }
     if (k === "shift") keys.sneak = true;
     if (k === "p") { if (state.mode==="play") togglePause(); else if (state.mode==="pause") togglePause(); }
     if (k === "m") { const m = Audio.toggle(); flash(m ? "Muted 🔇" : "Sound on 🔊"); }
@@ -311,6 +325,7 @@
   const canvasPos = (e) => { const r=cv.getBoundingClientRect();
     return { x:(e.clientX-r.left)*W/r.width, y:(e.clientY-r.top)*H/r.height }; };
   cv.addEventListener("pointerdown", (e) => {
+    if (state.mode==="parade"){ endParade(); return; }
     if (e.pointerType!=="touch") return;
     const p = canvasPos(e);
     if (p.x < W*0.45) joy = { id:e.pointerId, ox:p.x, oy:p.y, dx:0, dy:0 };
@@ -604,6 +619,7 @@
   // where it dangles upside-down, flailing, until the win modal appears.
   let captureAnim = null;   // { t, done }
   let ropeToss = null;      // { t, x, y } — coil arcing up over the branch
+  let paradeAnim = null;    // { t, lead, confetti, out, done } — the triumphal procession
 
   function springTrap(winFn){
     state.mode = "capture";
@@ -642,7 +658,35 @@
       const tx=clamp(oak.x - W/2, 0, world.w-W), ty=clamp(oak.y - H/2, 0, world.h-H);
       cam.x += (tx-cam.x)*0.08; cam.y += (ty-cam.y)*0.08;
     }
-    if (c.t >= 220){ const f=c.done; captureAnim=null; f(); }
+    if (c.t >= 220){ const f=c.done; captureAnim=null; startParade(f); }
+  }
+
+  // ================= TRIUMPHAL PROCESSION =================
+  // A cinematic parade after the wolf is caught: Peter leads, the bird loops
+  // overhead, hunters carry the wolf on a pole, Grandpa / cat / duck follow.
+  function startParade(done){
+    state.mode = "parade";
+    paradeAnim = { t:0, lead:-50, done, confetti:[] };
+    hudEl.style.opacity="0"; meterEl.style.opacity="0";
+    Audio.paradeMusic();
+  }
+  function endParade(){
+    if (!paradeAnim) return;
+    const f = paradeAnim.done; paradeAnim = null;
+    hudEl.style.opacity=""; meterEl.style.opacity="";
+    f();
+  }
+  function updateParade(){
+    const P = paradeAnim; if (!P) return;
+    P.t++; Audio.musicTick();
+    P.lead += 2.1;
+    if (P.t%3===0 && P.out===undefined)
+      P.confetti.push({ x:rand(0,W), y:-8, vx:rand(-0.3,0.3), vy:rand(0.9,1.7), ph:rand(0,7),
+        c:["#d9a441","#c43d2e","#f4ecd8","#6fae5f","#3f9bd6"][(Math.random()*5)|0] });
+    for (const c of P.confetti){ c.x += c.vx + Math.sin((P.t+c.ph*60)*0.05)*0.5; c.y += c.vy; }
+    P.confetti = P.confetti.filter(c => c.y < H+12);
+    if (P.out!==undefined){ if (--P.out<=0) endParade(); }
+    else if (P.lead-330 > W+50 || P.t>760) P.out=36;     // fade out once the column has crossed
   }
 
   // ================= UPDATE =================
@@ -850,6 +894,7 @@
   ];
 
   function draw(){
+    if (state.mode==="parade" && paradeAnim){ drawParade(); return; }
     drawGround();
     const shx = state.shake>0.3 ? rand(-state.shake,state.shake) : 0;
     const shy = state.shake>0.3 ? rand(-state.shake,state.shake) : 0;
@@ -1343,6 +1388,123 @@
     }
   }
 
+  // ---- a hunter for the procession: coat, brimmed hat, slung rifle ----
+  function drawHunter(x, y, step, coat, hatc){
+    drawShadow(x, y+16, 14);
+    ctx.save(); ctx.translate(x,y);
+    const sw = Math.sin(step)*4;
+    ctx.strokeStyle="#2f3a30"; ctx.lineWidth=5.5; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(-3,8); ctx.lineTo(-3+sw,17); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(3,8); ctx.lineTo(3-sw,17); ctx.stroke();
+    ctx.fillStyle="#38291b";
+    ctx.beginPath(); ctx.ellipse(-3+sw,18.4,4,2.3,0,0,7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(3-sw,18.4,4,2.3,0,0,7); ctx.fill();
+    ctx.strokeStyle="#4a3524"; ctx.lineWidth=3; ctx.lineCap="round";       // rifle across the back
+    ctx.beginPath(); ctx.moveTo(-11,3); ctx.lineTo(5,-21); ctx.stroke();
+    ctx.fillStyle=coat; ctx.beginPath(); ctx.roundRect(-9,-9,18,19,6); ctx.fill();
+    ctx.fillStyle="rgba(0,0,0,.15)"; ctx.fillRect(-9,5,18,5);
+    ctx.fillStyle="#7a4a26"; ctx.fillRect(-9,4,18,3);                      // belt
+    ctx.strokeStyle=coat; ctx.lineWidth=5; ctx.lineCap="round";            // arm up steadying the pole
+    ctx.beginPath(); ctx.moveTo(4,-4); ctx.lineTo(8,-26); ctx.stroke();
+    ctx.fillStyle="#f0c79b"; ctx.beginPath(); ctx.arc(8,-27,3,0,7); ctx.fill();
+    ctx.fillStyle="#eec49a"; ctx.beginPath(); ctx.arc(1,-15,8.5,0,7); ctx.fill();
+    ctx.fillStyle="#5a4632"; ctx.beginPath(); ctx.ellipse(4,-11.5,4.5,2,0.1,0,7); ctx.fill();   // mustache
+    ctx.fillStyle=hatc;
+    ctx.beginPath(); ctx.ellipse(1,-21,11,3,0,0,7); ctx.fill();            // hat brim
+    ctx.beginPath(); ctx.arc(1,-22,6.5,Math.PI,0); ctx.fill();             // hat dome
+    ctx.strokeStyle="#c43d2e"; ctx.lineWidth=2;                            // feather
+    ctx.beginPath(); ctx.moveTo(5,-25); ctx.lineTo(10,-31); ctx.stroke();
+    ctx.fillStyle="#26303a"; ctx.beginPath(); ctx.arc(4.6,-15.5,1.2,0,7); ctx.fill();
+    ctx.restore();
+  }
+
+  // ---- the procession itself: letterboxed sunset scene, marching column ----
+  function drawParade(){
+    const P = paradeAnim; if (!P) return;
+    const t = P.t, lead = P.lead, y0 = H*0.72;
+
+    // sunset sky, low sun, distant hills
+    const sky=ctx.createLinearGradient(0,0,0,H*0.66);
+    sky.addColorStop(0,"#27476b"); sky.addColorStop(0.5,"#7a6a8e");
+    sky.addColorStop(0.78,"#d9a441"); sky.addColorStop(1,"#c96a35");
+    ctx.fillStyle=sky; ctx.fillRect(0,0,W,H*0.66);
+    const sunX=W*0.79, sunY=H*0.5;
+    const sg=ctx.createRadialGradient(sunX,sunY,4,sunX,sunY,95);
+    sg.addColorStop(0,"rgba(255,236,170,.95)"); sg.addColorStop(0.25,"rgba(255,210,110,.5)"); sg.addColorStop(1,"rgba(255,210,110,0)");
+    ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(sunX,sunY,95,0,7); ctx.fill();
+    ctx.fillStyle="#ffe9b0"; ctx.beginPath(); ctx.arc(sunX,sunY,26,0,7); ctx.fill();
+    ctx.fillStyle="#3c5e3f"; ctx.beginPath(); ctx.moveTo(0,H*0.66);
+    ctx.quadraticCurveTo(W*0.2,H*0.52,W*0.45,H*0.64);
+    ctx.quadraticCurveTo(W*0.7,H*0.55,W,H*0.63); ctx.lineTo(W,H*0.66); ctx.closePath(); ctx.fill();
+
+    // meadow + path
+    const gg=ctx.createLinearGradient(0,H*0.62,0,H);
+    gg.addColorStop(0,"#568a46"); gg.addColorStop(1,"#33592f");
+    ctx.fillStyle=gg; ctx.fillRect(0,H*0.62,W,H*0.38);
+    ctx.fillStyle="rgba(202,161,90,.3)"; ctx.beginPath();
+    ctx.moveTo(-20,y0+26); ctx.quadraticCurveTo(W/2,y0+14,W+20,y0+26);
+    ctx.lineTo(W+20,y0+46); ctx.quadraticCurveTo(W/2,y0+36,-20,y0+46); ctx.closePath(); ctx.fill();
+    for (const [tx,s] of [[70,1.1],[W-90,1.25],[W-170,0.8]]){          // silhouette trees
+      ctx.fillStyle="rgba(38,66,40,.85)";
+      ctx.fillRect(tx-4*s, H*0.62-38*s, 8*s, 42*s);
+      ctx.beginPath(); ctx.arc(tx, H*0.62-46*s, 26*s, 0, 7); ctx.fill();
+    }
+
+    // ---- the marching column (rear to front) ----
+    const sT = state.type; state.type = "parade";     // so the duck walks on land
+    const bob = (k)=>Math.sin(t*0.12+k)*2;
+
+    const od = duck;                                  // the duck waddles at the very back
+    duck = { mode:"land", x:lead-318, y:y0+6+bob(4)*0.7, r:11, vx:1, vy:0, face:1, following:false, safe:true, gone:false, dive:0 };
+    drawDuck(); duck = od;
+    drawCat({ x:lead-262, y:y0+2+bob(3)*0.6, face:1, step:t*0.15, stun:0 });
+    drawGrandpa({ x:lead-206, y:y0-2, face:1, step:t*0.09 });
+
+    // two hunters carry the sleeping wolf slung under a pole
+    const hy=y0+bob(1)*0.5, hx1=lead-84, hx2=lead-166;
+    drawHunter(hx2, hy, t*0.12+1.6, "#3f6b46", "#6e4a2c");
+    const poleY=hy-30, mx=(hx1+hx2)/2;
+    ctx.strokeStyle="#8a5a32"; ctx.lineWidth=4; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(hx2-2,poleY); ctx.lineTo(hx1+4,poleY); ctx.stroke();
+    ctx.strokeStyle="#caa15a"; ctx.lineWidth=2.4;                      // the ties
+    ctx.beginPath(); ctx.moveTo(mx-14,poleY); ctx.lineTo(mx-13,poleY+9);
+    ctx.moveTo(mx+15,poleY); ctx.lineTo(mx+14,poleY+9); ctx.stroke();
+    ctx.save(); ctx.translate(mx, poleY+22); ctx.rotate(Math.PI + Math.sin(t*0.08)*0.05);
+    drawWolfBody({ step:t*0.02, stun:1, mode:"patrol", face:1 });      // belly-up, legs to the pole
+    ctx.restore();
+    drawZzz(mx-30, poleY+46);
+    drawHunter(hx1, hy, t*0.12, "#5d6247", "#4a3524");
+
+    // Peter leads with a golden pennant, the bird looping overhead
+    const px=lead, py=y0+bob(0);
+    drawPeter({ x:px, y:py, r:13, face:1, step:t*0.17, hasRope:false });
+    ctx.strokeStyle="#7a5230"; ctx.lineWidth=2.6; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(px+11,py+6); ctx.lineTo(px+15,py-42); ctx.stroke();
+    const wav=Math.sin(t*0.14)*4;
+    ctx.fillStyle="#d9a441"; ctx.beginPath();
+    ctx.moveTo(px+15,py-42); ctx.lineTo(px+44,py-36+wav); ctx.lineTo(px+15,py-30); ctx.closePath(); ctx.fill();
+    const ob = bird;
+    bird = { x:px+10+Math.sin(t*0.045)*30, y:py-66+Math.sin(t*0.09)*9, r:9,
+             face:(Math.cos(t*0.045)>=0?1:-1), hop:t*0.25, vx:0, vy:0, following:true, safe:true, gone:false };
+    drawBird(); bird = ob;
+    state.type = sT;
+
+    // confetti
+    for (const c of P.confetti){
+      ctx.save(); ctx.translate(c.x,c.y); ctx.rotate(Math.sin(t*0.1+c.ph)*1.3);
+      ctx.fillStyle=c.c; ctx.fillRect(-2.4,-1.4,4.8,2.8); ctx.restore();
+    }
+
+    // cinematic letterbox + titles + fades
+    ctx.fillStyle="#0b1116"; ctx.fillRect(0,0,W,46); ctx.fillRect(0,H-46,W,46);
+    ctx.fillStyle="#d9a441"; ctx.font="bold 19px Segoe UI, sans-serif"; ctx.textAlign="center";
+    ctx.fillText("🎺 The Triumphal Procession", W/2, 30);
+    ctx.fillStyle="#9fb4be"; ctx.font="12px Segoe UI, sans-serif"; ctx.textAlign="right";
+    ctx.fillText("Space / tap — continue ▸", W-16, H-18);
+    if (t<24){ ctx.fillStyle="rgba(8,12,16,"+(1-t/24).toFixed(3)+")"; ctx.fillRect(0,0,W,H); }
+    if (P.out!==undefined){ ctx.fillStyle="rgba(8,12,16,"+(1-P.out/36).toFixed(3)+")"; ctx.fillRect(0,0,W,H); }
+  }
+
   function drawRope(x,y,armed){
     ctx.save(); ctx.translate(x,y); ctx.scale(1,0.5);
     const pulse = armed?1:1+Math.sin(state.t*0.12)*0.12;
@@ -1354,7 +1516,7 @@
   }
 
   // ================= FLOW =================
-  function loop(){ if (state.mode==="play") update(); else if (state.mode==="capture") updateCapture(); draw(); requestAnimationFrame(loop); }
+  function loop(){ if (state.mode==="play") update(); else if (state.mode==="capture") updateCapture(); else if (state.mode==="parade") updateParade(); draw(); requestAnimationFrame(loop); }
 
   function showModal(title, body, btn){ mTitle.textContent=title; mBody.innerHTML=body; startBtn.textContent=btn; overlay.classList.add("show"); }
   function hideModal(){ overlay.classList.remove("show"); }
