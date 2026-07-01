@@ -92,6 +92,10 @@ The wolf has two moods:
 
 Each round adds more apples and a faster, sharper-eyed wolf.
 
+Both Peter and the wolf are drawn with shaded, gradient-lit sprites (rosy cheeks and
+a tasseled cap for Peter; a two-tone muzzle, pointed ears, bushy tail and glowing eyes
+for the wolf) rather than flat shapes, to match the polish of the meadow scenery.
+
 ## 🛠️ Built with
 
 Plain HTML5 Canvas + a tiny WebAudio synth. No build step, no dependencies.
