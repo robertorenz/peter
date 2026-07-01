@@ -54,7 +54,7 @@
       0 0 0 1px rgba(255,255,255,.06) inset,
       0 0 0 8px #20303a, 0 0 0 9px #0d161c;
   }
-  canvas { display: block; width: 100%; height: auto; background: #5f9e4f; }
+  canvas { display: block; width: 100%; height: auto; background: #5f9e4f; touch-action: none; }
 
   .hud {
     position: absolute; top: 12px; left: 14px; right: 14px;
@@ -141,7 +141,11 @@
           <span class="pill" id="objPill">🍎 Apples 0 / 5</span>
           <span class="pill" id="ammoPill" style="display:none">🍎 × 0</span>
         </div>
-        <div class="pill">Level <b id="lvlNum">1</b> · <span id="lvlName">The Meadow</span></div>
+        <div>
+          <span class="pill" id="heartPill">❤❤❤</span>
+          <span class="pill">⭐ <b id="scorePill">0</b></span>
+          <span class="pill">Level <b id="lvlNum">1</b> · <span id="lvlName">The Meadow</span></span>
+        </div>
       </div>
 
       <div class="meter">
@@ -160,7 +164,8 @@
           <p class="keys">
             Move with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> /
             <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> ·
-            <kbd>Shift</kbd> tip-toe · <kbd>Space</kbd> throw apple / search / trap.
+            <kbd>Shift</kbd> tip-toe · <kbd>Space</kbd> throw apple / search / trap.<br>
+            On touch screens: drag the left half to walk, tap the right half to act.
           </p>
           <button class="btn" id="startBtn">Begin the tale</button>
           <div class="foot">Throw apples to freeze the cat &amp; wolf. Hide behind rocks and trees.</div>
@@ -186,6 +191,8 @@
   const ammoPill= document.getElementById("ammoPill");
   const lvlNum  = document.getElementById("lvlNum");
   const lvlName = document.getElementById("lvlName");
+  const heartPill = document.getElementById("heartPill");
+  const scorePill = document.getElementById("scorePill");
   const alertFill = document.getElementById("alertFill");
   const meterLabel = document.getElementById("meterLabel");
 
@@ -248,6 +255,7 @@
       win(){ [523,659,784,1046].forEach((f,i)=>tone(f,0.3,"triangle",0.16,i*0.12)); },
       capture(){ [523,659,784,1046,784,1046,1318,1046].forEach((f,i)=>tone(f,0.34,"triangle",0.17,i*0.13)); },
       lose(){ tone(180,0.5,"sawtooth",0.2); tone(120,0.6,"sawtooth",0.18,0.08); },
+      hurt(){ tone(240,0.16,"square",0.16); tone(150,0.22,"sawtooth",0.13,0.05); },
       growl(){ tone(90,0.25,"sawtooth",0.08); },
       step(){ tone(220,0.05,"sine",0.04); },
       throwSfx(){ tone(520,0.08,"triangle",0.10); tone(380,0.07,"triangle",0.07,0.03); },
@@ -296,6 +304,33 @@
     if (k === "shift") keys.sneak = false;
   });
 
+  // touch: drag the left side of the screen to move, tap the right side to act
+  const canvasPos = (e) => { const r=cv.getBoundingClientRect();
+    return { x:(e.clientX-r.left)*W/r.width, y:(e.clientY-r.top)*H/r.height }; };
+  cv.addEventListener("pointerdown", (e) => {
+    if (e.pointerType!=="touch") return;
+    const p = canvasPos(e);
+    if (p.x < W*0.45) joy = { id:e.pointerId, ox:p.x, oy:p.y, dx:0, dy:0 };
+    else doAction();
+    e.preventDefault();
+  });
+  cv.addEventListener("pointermove", (e) => {
+    if (!joy || e.pointerId!==joy.id) return;
+    const p = canvasPos(e);
+    let dx=p.x-joy.ox, dy=p.y-joy.oy; const m=Math.hypot(dx,dy);
+    if (m>42){ dx=dx/m*42; dy=dy/m*42; }
+    joy.dx=dx; joy.dy=dy;
+    keys.left = dx < -10; keys.right = dx > 10;
+    keys.up   = dy < -10; keys.down  = dy > 10;
+    e.preventDefault();
+  });
+  const joyEnd = (e) => {
+    if (!joy || e.pointerId!==joy.id) return;
+    joy = null; keys.left=keys.right=keys.up=keys.down=false;
+  };
+  cv.addEventListener("pointerup", joyEnd);
+  cv.addEventListener("pointercancel", joyEnd);
+
   // ================= HELPERS =================
   const rand  = (a,b) => a + Math.random()*(b-a);
   const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
@@ -323,6 +358,42 @@
     resolve(ent);
   }
 
+  // ================= PARTICLES =================
+  let particles = [];
+  function burst(x, y, n, colors, sp=2.6, life=32, g=0.05){
+    for (let i=0;i<n;i++){
+      const a = rand(0,7), s = rand(sp*0.3, sp);
+      particles.push({ x, y, vx:Math.cos(a)*s, vy:Math.sin(a)*s - rand(0,0.8), g,
+        life:rand(life*0.6,life), max:life, c:colors[(Math.random()*colors.length)|0], r:rand(1.6,3.4) });
+    }
+  }
+  function updateParticles(){
+    for (const p of particles){ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.vx*=0.97; p.vy*=0.97; p.life--; }
+    particles = particles.filter(p => p.life > 0);
+    // drifting golden leaves in the afternoon level
+    if (state.level===1 && state.t%26===0)
+      particles.push({ x:cam.x+rand(0,W), y:cam.y-10, vx:rand(-0.4,0.6), vy:rand(0.5,0.9), g:0.001,
+        life:240, max:240, c:["#d9a441","#c96a35","#e8d24a"][(Math.random()*3)|0], r:rand(2,3.2) });
+  }
+  function drawParticles(){
+    for (const p of particles){
+      ctx.globalAlpha = Math.min(1, p.life/28);
+      ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  let flies = [];   // fireflies for the night level
+  function drawFireflies(){
+    for (const f of flies){
+      const fx = f.x + Math.sin(state.t*0.01+f.ph)*34, fy = f.y + Math.cos(state.t*0.013+f.ph*2)*22;
+      const a = 0.3 + 0.3*Math.sin(state.t*0.09 + f.ph*3);
+      if (a <= 0.06) continue;
+      ctx.fillStyle = `rgba(255,235,140,${(a*0.25).toFixed(3)})`; ctx.beginPath(); ctx.arc(fx,fy,6,0,7); ctx.fill();
+      ctx.fillStyle = `rgba(255,241,170,${a.toFixed(3)})`; ctx.beginPath(); ctx.arc(fx,fy,1.9,0,7); ctx.fill();
+    }
+  }
+
   // ================= WORLD / LEVELS =================
   const LEVELS = [
     { type:"apples", name:"The Meadow",
@@ -343,7 +414,9 @@
 
   const state = { mode:"menu", round:1, level:0, type:"apples", scroll:false,
                   t:0, alert:0, apples:0, need:0, objective:"", phase:"", invuln:0,
-                  flashMsg:"", flashT:0, won:false };
+                  flashMsg:"", flashT:0, won:false,
+                  hearts:3, score:0, shake:0 };
+  const bestScore = () => +(localStorage.getItem("pw_best") || 0);
 
   const STUN = 150;
 
@@ -365,7 +438,9 @@
     state.level=idx; state.type=L.type; state.alert=0; state.apples=0;
     state.t=0; state.invuln=70; state.won=false; state.phase=""; projectiles=[];
     obstacles=[]; apples=[]; pond=oak=gate=trap=rope=cat=grandpa=null; duck=bird=null;
+    state.hearts=3; state.shake=0; particles=[]; flies=[];
     lvlNum.textContent = idx+1; lvlName.textContent = L.name;
+    updateHearts();
 
     if (L.type==="apples") buildApples(round);
     else if (L.type==="bird") buildBird(round);
@@ -374,6 +449,8 @@
 
     state.scroll = world.w > W || world.h > H;
     scatterDecor(Math.round(world.w*world.h/16000));
+    if (PALETTES[state.level].night)
+      for (let i=0;i<26;i++) flies.push({ x:rand(40,world.w-40), y:rand(40,world.h-40), ph:rand(0,7) });
     centerCamera();
   }
 
@@ -449,8 +526,8 @@
   }
 
   const mkPeter = (x,y,rope) => ({x,y,r:13,face:1,step:0,hasRope:false});
-  const mkWolf  = (x,y,spd) => ({x,y,r:18,vx:0,vy:0,face:1,step:0,mode:"patrol",tx:x,ty:y,growlCd:0,stun:0,speed:spd});
-  const mkCat   = (x,y,spd) => ({x,y,r:14,vx:0,vy:0,face:1,step:0,stun:0,speed:spd,growlCd:0});
+  const mkWolf  = (x,y,spd) => ({x,y,r:18,vx:0,vy:0,face:1,step:0,mode:"patrol",tx:x,ty:y,growlCd:0,stun:0,speed:spd,crouch:0,pounce:0,pounceCd:90,pvx:0,pvy:0});
+  const mkCat   = (x,y,spd) => ({x,y,r:14,vx:0,vy:0,face:1,step:0,stun:0,speed:spd,growlCd:0,crouch:0,pounce:0,pounceCd:90,pvx:0,pvy:0});
 
   // ================= CAMERA =================
   function centerCamera(){
@@ -521,6 +598,8 @@
     state.t++; Audio.musicTick();
     if (state.flashT>0) state.flashT--;
     if (state.invuln>0) state.invuln--;
+    if (state.shake>0.2) state.shake*=0.86; else state.shake=0;
+    updateParticles();
 
     // Peter
     const sneaking = keys.sneak;
@@ -531,6 +610,7 @@
       peter.x+=dx*spd; peter.y+=dy*spd; peter.step+=spd*0.06;
       if (dx) peter.face=dx>0?1:-1;
       if (!sneaking && state.t%16===0) Audio.step();
+      if (!sneaking && state.t%9===0) burst(peter.x-dx*8, peter.y+15, 1, ["rgba(150,175,110,.9)"], 0.7, 20, -0.015);
     }
     resolve(peter);
     updateCamera();
@@ -539,14 +619,17 @@
     for (const p of projectiles){
       p.x+=p.vx; p.y+=p.vy; p.vy+=0.05; p.spin+=0.35; p.life--;
       const e=aimTarget();
-      if (e && !e.gone && Math.hypot(p.x-e.x,p.y-e.y) < e.r+9){ e.stun=STUN; p.dead=true; Audio.thud(); flash("🍎 splat! frozen"); }
+      if (e && !e.gone && Math.hypot(p.x-e.x,p.y-e.y) < e.r+9){ e.stun=STUN; e.crouch=0; e.pounce=0; p.dead=true; Audio.thud();
+        burst(p.x, p.y, 14, ["#c43d2e","#e25a44","#f7e58a"], 3, 36, 0.08); state.shake=Math.max(state.shake,3);
+        flash("🍎 splat! frozen"); }
       if (p.life<=0 || blockedAt(p.x,p.y,4) || p.x<0||p.y<0||p.x>world.w||p.y>world.h) p.dead=true;
     }
     projectiles = projectiles.filter(p=>!p.dead);
 
     // apple pickups
     for (const a of apples){
-      if (!a.got && dist(peter.x,peter.y,a.x,a.y) < peter.r+13){ a.got=true; state.apples++; Audio.pickup();
+      if (!a.got && dist(peter.x,peter.y,a.x,a.y) < peter.r+13){ a.got=true; state.apples++; state.score+=50; Audio.pickup();
+        burst(a.x, a.y-4, 10, ["#ffd45e","#fff3c4","#e25a44"], 2.2, 28, 0.03);
         flash(a.ammo ? "🍎 picked up (ammo)" : "🍎 +1"); }
     }
     // gentle ammo respawn for throw levels
@@ -563,9 +646,26 @@
     updateHUD();
   }
 
-  // shared wolf/cat chase toward a target (respects stun + obstacles)
-  function chase(ent, tx, ty, factor){
-    if (ent.stun>0){ ent.stun--; ent.vx*=0.6; ent.vy*=0.6; return; }
+  // shared wolf/cat chase toward a target (respects stun + obstacles).
+  // canPounce: telegraphed leap — crouch (the "!" warning) then a fast dodgeable lunge.
+  function chase(ent, tx, ty, factor, canPounce){
+    if (ent.stun>0){ ent.stun--; ent.crouch=0; ent.pounce=0; ent.vx*=0.6; ent.vy*=0.6; return; }
+    if (ent.pounce>0){
+      ent.pounce--; ent.x+=ent.pvx; ent.y+=ent.pvy; ent.pvx*=0.94; ent.pvy*=0.94;
+      ent.step += 0.4; if (Math.abs(ent.pvx)>0.2) ent.face = ent.pvx>0?1:-1;
+      resolve(ent); return;
+    }
+    if (ent.crouch>0){
+      ent.crouch--; ent.vx*=0.8; ent.vy*=0.8;
+      if (ent.crouch===0){
+        const a=Math.atan2(ty-ent.y, tx-ent.x);
+        ent.pvx=Math.cos(a)*7.6; ent.pvy=Math.sin(a)*7.6; ent.pounce=20; ent.pounceCd=190;
+        Audio.growl(); state.shake=Math.max(state.shake,4);
+      }
+      return;
+    }
+    if (ent.pounceCd>0) ent.pounceCd--;
+    else if (canPounce && dist(ent.x,ent.y,tx,ty)<150){ ent.crouch=32; Audio.growl(); return; }
     if (ent.growlCd>0) ent.growlCd--;
     else { Audio.growl(); ent.growlCd=80; }
     moveToward(ent, tx, ty, ent.speed*factor);
@@ -586,15 +686,15 @@
     else { state.alert=Math.max(0,state.alert-0.9); if (state.alert<30) wolf.mode="patrol"; }
 
     // a fully-alert wolf hunts faster, but only an actual pounce can catch Peter
-    if (wolf.mode==="hunt"){ chase(wolf, peter.x, peter.y, 1.5 + (state.alert>=100?0.25:0)); }
+    if (wolf.mode==="hunt"){ chase(wolf, peter.x, peter.y, 1.5 + (state.alert>=100?0.25:0), true); }
     else { if (dist(wolf.tx,wolf.ty,wolf.x,wolf.y)<24 || state.t%140===0){ wolf.tx=rand(60,world.w-60); wolf.ty=rand(60,world.h-60); }
            if (wolf.growlCd>0) wolf.growlCd--; moveToward(wolf, wolf.tx, wolf.ty, wolf.speed*0.8); }
 
-    if (state.invuln<=0 && d<peter.r+wolf.r-4) return lose("caught");
+    if (state.invuln<=0 && d<peter.r+wolf.r-4 && catchPeter()) return;
     const atGate = peter.x>gate.x-30 && Math.abs(peter.y-gate.y)<gate.h/2;
     if (atGate){ if (state.apples>=state.need) return winEscape(); else flash("Gather every apple first!"); }
 
-    state.alert=state.alert; setMeter(state.alert, wolf.mode==="hunt"?"⚠ The wolf has your scent!":(state.alert>8?"The wolf grows curious…":"The wolf's suspicion"));
+    setMeter(state.alert, wolf.mode==="hunt"?"⚠ The wolf has your scent!":(state.alert>8?"The wolf grows curious…":"The wolf's suspicion"));
     state.objective = `gather apples & reach the gate`;
   }
 
@@ -648,8 +748,8 @@
     if (rope.found && !peter.hasRope && dist(peter.x,peter.y,rope.x,rope.y) < peter.r+16){ peter.hasRope=true; flash("Got the rope! 🪢 To the oak!"); Audio.pickup(); }
     if (grandpa) grandpa.step+=0.02;
     // the wolf hunts Peter the whole time
-    chase(wolf, peter.x, peter.y, 1.35);
-    if (state.invuln<=0 && dist(wolf.x,wolf.y,peter.x,peter.y) < peter.r+wolf.r-3) return lose("caught");
+    chase(wolf, peter.x, peter.y, 1.35, true);
+    if (state.invuln<=0 && dist(wolf.x,wolf.y,peter.x,peter.y) < peter.r+wolf.r-3 && catchPeter()) return;
 
     const dw=dist(wolf.x,wolf.y,peter.x,peter.y);
     setMeter(clamp(100-(dw-40)/2.4,0,100), trap.armed?"Lure the wolf to the oak!":"The wolf is hunting you");
@@ -661,7 +761,23 @@
 
   function setMeter(v, label){ state.alert=v; alertFill.style.width = clamp(v,0,100)+"%"; meterLabel.textContent = label; }
 
+  function updateHearts(){
+    heartPill.innerHTML = "❤".repeat(Math.max(0,state.hearts)) + "🖤".repeat(Math.max(0,3-state.hearts));
+  }
+  // wolf touched Peter: lose a heart, knock the wolf back dazed; returns true only on game over
+  function catchPeter(){
+    state.hearts--; updateHearts();
+    if (state.hearts<=0){ lose("caught"); return true; }
+    Audio.hurt(); state.shake=Math.max(state.shake,9); state.invuln=140;
+    burst(peter.x, peter.y-6, 16, ["#e35d6a","#ffb3ba","#fff"], 3, 40, 0.05);
+    const a=Math.atan2(wolf.y-peter.y, wolf.x-peter.x);
+    wolf.x+=Math.cos(a)*95; wolf.y+=Math.sin(a)*95; wolf.stun=70; wolf.crouch=0; wolf.pounce=0; resolve(wolf);
+    flash(state.hearts===1 ? "💔 One heart left — careful!" : "The wolf nipped Peter! ♥ lost");
+    return false;
+  }
+
   function updateHUD(){
+    scorePill.textContent = state.score;
     if (state.type==="apples"){ objPill.style.display=""; ammoPill.style.display="none";
       objPill.innerHTML = `🍎 Apples <b>${state.apples}</b> / ${state.need}`; }
     else if (state.type==="rope"){ objPill.style.display=""; ammoPill.style.display="";
@@ -671,9 +787,19 @@
   }
 
   // ================= DRAW =================
+  // one palette per level: day meadow, golden afternoon, blue dusk, night forest
+  const PALETTES = [
+    { top:"#79b566", bot:"#578f48", tint:null },
+    { top:"#93bc60", bot:"#6f963f", tint:"rgba(255,180,70,.10)" },
+    { top:"#5f9a74", bot:"#42775a", tint:"rgba(45,70,130,.16)" },
+    { top:"#42704f", bot:"#2e523c", tint:"rgba(8,18,48,.30)", night:true },
+  ];
+
   function draw(){
     drawGround();
-    ctx.save(); ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
+    const shx = state.shake>0.3 ? rand(-state.shake,state.shake) : 0;
+    const shy = state.shake>0.3 ? rand(-state.shake,state.shake) : 0;
+    ctx.save(); ctx.translate(-Math.round(cam.x-shx), -Math.round(cam.y-shy));
 
     // ground features
     if (state.scroll) { ctx.strokeStyle="rgba(40,70,40,.5)"; ctx.lineWidth=6; ctx.strokeRect(0,0,world.w,world.h); }
@@ -699,7 +825,19 @@
     ents.sort((a,b)=>a.y-b.y).forEach(e=>e.d());
 
     for (const p of projectiles) drawProjectile(p);
+    drawParticles();
+    if (PALETTES[state.level].night) drawFireflies();
     ctx.restore();
+
+    // atmosphere: level tint + soft vignette (screen space)
+    const pal = PALETTES[state.level];
+    if (pal.tint){ ctx.fillStyle = pal.tint; ctx.fillRect(0,0,W,H); }
+    const vg = ctx.createRadialGradient(W/2,H/2,H*0.52, W/2,H/2,H*0.95);
+    vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(10,18,24,.34)");
+    ctx.fillStyle = vg; ctx.fillRect(0,0,W,H);
+
+    drawMinimap();
+    drawTouchUI();
 
     // flash banner (screen space)
     if (state.flashT>0){
@@ -712,8 +850,9 @@
   }
 
   function drawGround(){
+    const pal=PALETTES[state.level];
     const g=ctx.createLinearGradient(0,0,0,H);
-    g.addColorStop(0,"#79b566"); g.addColorStop(1,"#578f48");
+    g.addColorStop(0,pal.top); g.addColorStop(1,pal.bot);
     ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
     // decor tufts/flowers (world coords -> screen)
     for (const f of decor){
@@ -734,6 +873,43 @@
     ctx.fillText(label, x, y-ry-10); ctx.restore();
   }
 
+  // ---- minimap (scrolling worlds) ----
+  function drawMinimap(){
+    if (!state.scroll || state.mode!=="play") return;
+    const mw=138, mh=Math.round(mw*world.h/world.w), mx=W-mw-14, my=H-mh-46;
+    const sx=mw/world.w, sy=mh/world.h;
+    ctx.save(); ctx.globalAlpha=0.85;
+    ctx.fillStyle="rgba(15,25,32,.6)"; ctx.beginPath(); ctx.roundRect(mx-4,my-4,mw+8,mh+8,7); ctx.fill();
+    ctx.strokeStyle="rgba(255,255,255,.22)"; ctx.lineWidth=1; ctx.stroke();
+    // goal
+    ctx.fillStyle="#7fd67a";
+    if (state.type==="apples" && gate) ctx.fillRect(mx+mw-4, my+(gate.y-gate.h/2)*sy, 4, gate.h*sy);
+    if ((state.type==="duck") && pond){ ctx.beginPath(); ctx.ellipse(mx+pond.x*sx,my+pond.y*sy,pond.rx*sx,pond.ry*sy,0,0,7); ctx.fillStyle="#6fc3d8"; ctx.fill(); }
+    if ((state.type==="bird"||state.type==="rope") && oak){ ctx.fillStyle="#7fd67a"; ctx.beginPath(); ctx.arc(mx+oak.x*sx,my+oak.y*sy,3.4,0,7); ctx.fill(); }
+    // apples left (objective level only)
+    if (state.type==="apples"){ ctx.fillStyle="#e25a44";
+      for (const a of apples) if (!a.got){ ctx.fillRect(mx+a.x*sx-1, my+a.y*sy-1, 2, 2); } }
+    // friends & foes
+    const dot=(e,c,r)=>{ if(!e||e.gone) return; ctx.fillStyle=c; ctx.beginPath(); ctx.arc(mx+e.x*sx,my+e.y*sy,r,0,7); ctx.fill(); };
+    dot(duck,"#f4f1e8",2.4); dot(bird,"#f4f1e8",2.2);
+    dot(cat,"#ff9d4a",2.8); dot(wolf,"#ff5a3c",3);
+    dot(peter,"#ffd45e",3.2);
+    // camera view
+    ctx.strokeStyle="rgba(255,255,255,.35)"; ctx.strokeRect(mx+cam.x*sx, my+cam.y*sy, W*sx, H*sy);
+    ctx.restore();
+  }
+
+  // ---- touch controls (virtual joystick + action tap) ----
+  let joy=null;
+  function drawTouchUI(){
+    if (!joy) return;
+    ctx.save(); ctx.globalAlpha=0.4;
+    ctx.strokeStyle="#fff"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(joy.ox,joy.oy,42,0,7); ctx.stroke();
+    ctx.fillStyle="#ffd45e"; ctx.beginPath(); ctx.arc(joy.ox+joy.dx,joy.oy+joy.dy,17,0,7); ctx.fill();
+    ctx.restore();
+  }
+
   // ---- sprites ----
   function drawShadow(x,y,rx){ ctx.fillStyle="rgba(20,30,20,.22)"; ctx.beginPath(); ctx.ellipse(x,y,rx,rx*0.34,0,0,7); ctx.fill(); }
   function drawZzz(x,y){ ctx.save(); ctx.fillStyle="#bfe1ff"; ctx.font="bold 13px Segoe UI"; ctx.textAlign="center";
@@ -743,6 +919,7 @@
     const b=Math.sin(p.step)*2.2, x=p.x, y=p.y+b, f=p.face;
     drawShadow(x,p.y+16,14);
     ctx.save(); ctx.translate(x,y); ctx.scale(f,1);
+    if (state.invuln>0 && state.mode==="play" && Math.floor(state.t/4)%2) ctx.globalAlpha=0.45;   // hurt blink
     const sw=Math.sin(p.step*1.2)*4;
 
     // legs + boots
@@ -797,7 +974,8 @@
   function drawWolf(w){
     const bnc=Math.sin(w.step)*1.8, x=w.x, y=w.y+bnc, f=w.face;
     drawShadow(x,w.y+18,22);
-    ctx.save(); ctx.translate(x,y); ctx.scale(f,1);
+    ctx.save(); ctx.translate(x,y);
+    ctx.scale(f, w.crouch>0?0.84:(w.pounce>0?1.06:1));   // crouch squash / pounce stretch
     const hunting = w.stun<=0 && (w.mode==="hunt"||state.type!=="apples");
     const top = w.stun>0 ? "#9198a3" : hunting?"#686d76":"#797e87";
     const bot = w.stun>0 ? "#6f7580" : hunting?"#454951":"#54585f";
@@ -858,6 +1036,8 @@
 
     ctx.restore();
     if (w.stun>0) drawZzz(x,y);
+    if (w.crouch>0){ ctx.save(); ctx.fillStyle="#ffd45e"; ctx.font="bold 20px Segoe UI"; ctx.textAlign="center";
+      ctx.globalAlpha=0.6+0.4*Math.sin(state.t*0.5); ctx.fillText("❗", x, y-32); ctx.restore(); }
   }
 
   function drawCat(c){
@@ -1068,8 +1248,18 @@
 
   function advance(crest, title, story, sound){
     state.mode="won"; Audio.musicStop(); (sound==="capture"?Audio.capture:Audio.win)();
+    // score: level bonus + speed bonus + hearts kept
+    const speedBonus = Math.max(0, 1000 - Math.floor(state.t/6));
+    const gained = 500 + speedBonus + state.hearts*150;
+    state.score += gained;
+    if (state.score > bestScore()) localStorage.setItem("pw_best", state.score);
+    const stars = "★".repeat(Math.max(1,state.hearts)) + "☆".repeat(3-Math.max(1,state.hearts));
+    const scoreLine = `<br><br><span style="color:#b9822c;font-weight:700;font-size:20px;letter-spacing:3px">${stars}</span>` +
+      `<br><b>+${gained}</b> points (${state.hearts}♥ kept, speed +${speedBonus}) · total <b>${state.score}</b> · best ${bestScore()}`;
+    const finale = levelIndexFor(state.round) === LEVELS.length-1;
+    if (finale) story += `<br><br>🎺 <b>The Triumphal Procession!</b> Peter marches at the front, the hunters behind, the wolf bound for the zoo — and the tale begins anew, a little wilder each time.`;
     const nx=LEVELS[levelIndexFor(state.round+1)]; setCrest(crest);
-    showModal(title, `${story}<br><br><b>Next — ${nx.name}:</b> ${nx.brief}`, `Begin: ${nx.name} ▶`);
+    showModal(title, `${story}${scoreLine}<br><br><b>Next — ${nx.name}:</b> ${nx.brief}`, `Begin: ${nx.name} ▶`);
     startBtn.onclick=()=>{ state.round++; startRound(); };
   }
   const winEscape  = () => advance("🏡","Safe at home! 🏡",`Peter slipped through the gate with <b>all ${state.need} apples</b> — the wolf never caught him.`,"win");
@@ -1086,14 +1276,16 @@
       duck:  ["The wolf caught the duck! 🐺","Get to the duck sooner so she follows, stun the wolf with apples, and use the rocks as cover."],
     };
     const [t,b] = msgs[why] || msgs.caught;
-    showModal(t, b, "Try again ↺"); startBtn.onclick=()=>{ startRound(); };
+    showModal(t, `${b}<br><br>Score so far: <b>${state.score}</b> · best ${bestScore()}`, "Try again ↺");
+    startBtn.onclick=()=>{ startRound(); };
   }
 
   function togglePause(){
     if (state.mode==="play"){ state.mode="pause"; setCrest("⏸"); showModal("Paused","Take a breath. The meadow will wait.","Resume"); startBtn.onclick=()=>{ hideModal(); state.mode="play"; }; }
   }
 
-  startBtn.onclick = () => { state.round=1; startRound(); };
+  startBtn.onclick = () => { state.round=1; state.score=0; startRound(); };
+  if (bestScore() > 0) mBody.innerHTML += `<br><b>Best score: ${bestScore()} ⭐</b>`;
   makeLevel(state.round);   // populate a scene behind the menu
 
   if (!CanvasRenderingContext2D.prototype.roundRect){

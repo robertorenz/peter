@@ -16,9 +16,23 @@ Open `index.html` in any modern browser. That's it.
 | --- | --- |
 | Move | `W` `A` `S` `D` or arrow keys |
 | Tip-toe (quiet, slower) | hold `Shift` |
-| Spring the rope-trap | `Space` |
+| Throw apple / search / spring the trap | `Space` |
 | Pause | `P` |
 | Mute / unmute | `M` |
+| **Touch screens** | drag the **left half** to walk, tap the **right half** to act |
+
+## ✨ Game feel
+
+- **Three hearts** per level — the wolf nipping you costs a heart (with a knock-back
+  and a moment of invulnerability) instead of ending the run outright.
+- **The wolf pounces**: when it gets close it crouches with a flashing **❗**, then
+  leaps in a straight line — sidestep the telegraph to survive.
+- **Score, stars & best**: apples, speed and hearts kept all earn points; each level
+  ends with a ★-rating and your best total is saved between sessions.
+- **A minimap** in the corner of every big scrolling level shows friends, foes and the goal.
+- **Each level has its own light**: day meadow, golden afternoon with drifting leaves,
+  blue dusk, and a night forest full of fireflies.
+- Particles, screen shake and hurt-blinks make every splat, pickup and close call land.
 
 ## 🎯 How to win
 
