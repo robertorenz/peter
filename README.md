@@ -10,6 +10,10 @@ Everything — the meadow, the trees, Peter, the wolf, and the music cues — is
 
 Open `index.html` in any modern browser. That's it.
 
+The game **fills the whole browser window**: on big screens everything — the meadow,
+the HUD, the story cards — scales up together (with the canvas re-rendered at full
+resolution, so it stays crisp), and on small screens it shrinks to fit.
+
 ## 🎮 Controls
 
 | Action | Keys |

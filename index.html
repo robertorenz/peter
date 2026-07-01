@@ -180,7 +180,7 @@
   "use strict";
   const cv = document.getElementById("game");
   const ctx = cv.getContext("2d");
-  const W = cv.width, H = cv.height;          // viewport size
+  const W = 900, H = 540;                     // world size; canvas backing store scales to the window
 
   // ---- UI refs ----
   const overlay = document.getElementById("overlay");
@@ -197,6 +197,23 @@
   const meterEl = document.querySelector(".meter");
   const alertFill = document.getElementById("alertFill");
   const meterLabel = document.getElementById("meterLabel");
+
+  // ---- fit to the browser: keep the 920px base look, scale everything up on bigger windows ----
+  // (zoom instead of transform:scale — Chromium miscomposites a large canvas under a scaled ancestor)
+  const frame = document.querySelector(".frame");
+  function fitView(){
+    frame.style.zoom = "1";
+    const fw = frame.offsetWidth, fh = frame.offsetHeight;    // base layout size at zoom 1
+    const s = Math.min(innerWidth * 0.97 / fw, innerHeight * 0.97 / fh);
+    frame.style.zoom = String(s);
+    // re-render the canvas at the on-screen resolution so scaling up stays sharp
+    const px = Math.min(4, Math.max(1, s * (window.devicePixelRatio || 1)));
+    const bw = Math.round(W * px), bh = Math.round(H * px);
+    if (cv.width !== bw || cv.height !== bh){ cv.width = bw; cv.height = bh; }
+    ctx.setTransform(bw / W, 0, 0, bh / H, 0, 0);
+  }
+  addEventListener("resize", fitView);
+  fitView();
 
   // ================= AUDIO =================
   const Audio = (() => {
