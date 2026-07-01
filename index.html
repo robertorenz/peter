@@ -256,6 +256,9 @@
       capture(){ [523,659,784,1046,784,1046,1318,1046].forEach((f,i)=>tone(f,0.34,"triangle",0.17,i*0.13)); },
       lose(){ tone(180,0.5,"sawtooth",0.2); tone(120,0.6,"sawtooth",0.18,0.08); },
       hurt(){ tone(240,0.16,"square",0.16); tone(150,0.22,"sawtooth",0.13,0.05); },
+      snap(){ tone(760,0.06,"square",0.2); tone(240,0.22,"sawtooth",0.18,0.05); },
+      yelp(){ tone(520,0.16,"sawtooth",0.12); tone(760,0.12,"sawtooth",0.10,0.07); tone(620,0.14,"sawtooth",0.08,0.15); },
+      creak(){ tone(130,0.22,"triangle",0.07); tone(97,0.2,"triangle",0.05,0.08); },
       growl(){ tone(90,0.25,"sawtooth",0.08); },
       step(){ tone(220,0.05,"sine",0.04); },
       throwSfx(){ tone(520,0.08,"triangle",0.10); tone(380,0.07,"triangle",0.07,0.03); },
@@ -335,6 +338,8 @@
   const rand  = (a,b) => a + Math.random()*(b-a);
   const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
   const dist  = (ax,ay,bx,by) => Math.hypot(ax-bx, ay-by);
+  const lerp  = (a,b,t) => a + (b-a)*t;
+  const branchTip = () => ({ x:oak.x+38, y:oak.y-20 });   // where the oak's big branch ends
 
   function resolve(ent){                       // push ent out of solid obstacles + world bounds
     const er = ent.r || 10;
@@ -438,7 +443,7 @@
     state.level=idx; state.type=L.type; state.alert=0; state.apples=0;
     state.t=0; state.invuln=70; state.won=false; state.phase=""; projectiles=[];
     obstacles=[]; apples=[]; pond=oak=gate=trap=rope=cat=grandpa=null; duck=bird=null;
-    state.hearts=3; state.shake=0; particles=[]; flies=[];
+    state.hearts=3; state.shake=0; particles=[]; flies=[]; captureAnim=null; ropeToss=null;
     lvlNum.textContent = idx+1; lvlName.textContent = L.name;
     updateHearts();
 
@@ -460,7 +465,7 @@
     gate = { x:world.w-46, y:world.h/2, w:46, h:170 };
     pond = { x:250, y:world.h-160, rx:92, ry:50 };
     oak  = { x:Math.round(world.w*0.55), y:Math.round(world.h*0.5), r:46 };
-    trap = { x:oak.x, y:oak.y+34, r:28, armed:false };
+    trap = { x:oak.x+38, y:oak.y+46, r:28, armed:false };   // under the branch tip
     const keep=[{x:120,y:world.h/2,d:170},{x:pond.x,y:pond.y,d:160},{x:oak.x,y:oak.y,d:170},{x:gate.x,y:gate.y,d:210}];
     addObstacles(11+round, ["tree","tree","rock"], keep);   // mostly trees (cover from the wolf)
     state.need = 5 + round;
@@ -499,7 +504,7 @@
     world={w:1700,h:1100};
     oak = { x:1480, y:300, r:54 };                      // the big oak (trap site)
     grandpa = { x:oak.x-46, y:oak.y+34, face:1, step:0 };
-    trap = { x:oak.x, y:oak.y+40, r:30, armed:false };
+    trap = { x:oak.x+38, y:oak.y+46, r:30, armed:false };   // under the branch tip
     const keep=[{x:140,y:900,d:200},{x:oak.x,y:oak.y,d:200}];
     addObstacles(8+round, ["tree","cliff"], keep);
     // searchable rocks — exactly one hides the rope
@@ -571,15 +576,16 @@
 
   function tryTrap(){                            // level 1 rope-at-oak
     if (!trap || !trap.armed) return;
-    if (dist(wolf.x,wolf.y,trap.x,trap.y) < trap.r+wolf.r && dist(peter.x,peter.y,trap.x,trap.y) < 82) winCapture();
-    else if (dist(peter.x,peter.y,trap.x,trap.y) < 82) flash("Lure the wolf onto the rope, then Space!");
+    if (dist(wolf.x,wolf.y,trap.x,trap.y) < trap.r+wolf.r && dist(peter.x,peter.y,trap.x,trap.y) < 90) springTrap(winCapture);
+    else if (dist(peter.x,peter.y,trap.x,trap.y) < 90) flash("Lure the wolf under the snare, then Space!");
   }
 
   function ropeAction(){                          // level 4 context action — returns true if it consumed the press
-    if (trap.armed && dist(peter.x,peter.y,oak.x,oak.y) < oak.r+70 && dist(wolf.x,wolf.y,oak.x,oak.y) < oak.r+55){ winRope(); return true; }
+    if (trap.armed && dist(peter.x,peter.y,oak.x,oak.y) < oak.r+70 && dist(wolf.x,wolf.y,trap.x,trap.y) < 75){ springTrap(winRope); return true; }
     if (peter.hasRope && dist(peter.x,peter.y,oak.x,oak.y) < oak.r+44){
       trap.armed=true; peter.hasRope=false; state.phase="lure";
-      flash("Rope set at the oak! Now lure the wolf here 🐺"); Audio.ding(); return true;
+      ropeToss = { t:0, x:peter.x, y:peter.y-8 };
+      flash("Rope over the branch! Now lure the wolf under it 🐺"); Audio.ding(); return true;
     }
     // search the nearest UN-checked rock (a checked rock falls through, so you can throw)
     let best=null, bd=1e9;
@@ -593,6 +599,52 @@
     return false;                                 // nothing to do here -> let doAction() throw an apple
   }
 
+  // ================= CAPTURE CUTSCENE =================
+  // The snare snaps around the wolf's tail and hoists it up under the branch,
+  // where it dangles upside-down, flailing, until the win modal appears.
+  let captureAnim = null;   // { t, done }
+  let ropeToss = null;      // { t, x, y } — coil arcing up over the branch
+
+  function springTrap(winFn){
+    state.mode = "capture";
+    captureAnim = { t:0, done:winFn };
+    wolf.stun=0; wolf.crouch=0; wolf.pounce=0;
+    Audio.snap(); state.shake = 8;
+    burst(wolf.x, wolf.y+8, 12, ["#caa15a","#e7c46b","#9b8a63"], 2.6, 30, 0.06);
+    flash("Got him! 🪢");
+  }
+
+  function updateCapture(){
+    const c = captureAnim; c.t++;
+    if (state.flashT>0) state.flashT--;
+    if (state.shake>0.2) state.shake*=0.86; else state.shake=0;
+    updateParticles();
+    const b = branchTip(), groundY = oak.y+46;
+
+    wolf.step += 0.5;                            // flailing legs
+    peter.step += 0.18;                          // Peter bounces with excitement
+    if (c.t < 14){                               // yank the wolf under the branch
+      wolf.x += (b.x-wolf.x)*0.3; wolf.y += (groundY-wolf.y)*0.3;
+    }
+    if (c.t === 14){                             // lift-off: shake loose some leaves
+      Audio.yelp(); state.shake = Math.max(state.shake,5);
+      burst(oak.x, oak.y-46, 18, ["#356b30","#46823c","#5a9c4e"], 2.2, 55, 0.06);
+    }
+    if (c.t > 30 && c.t % 44 === 0) Audio.creak();   // the branch groans under the swinging wolf
+    if (c.t === 100) Audio.yelp();
+
+    if (grandpa){                                // Grandpa hurries over to tie the knot
+      grandpa.x += (oak.x-76-grandpa.x)*0.03; grandpa.y += (oak.y+52-grandpa.y)*0.03;
+      grandpa.face = grandpa.x < oak.x ? 1 : -1; grandpa.step += 0.12;
+    }
+    // camera drifts to the oak so the whole scene is on screen
+    if (state.scroll){
+      const tx=clamp(oak.x - W/2, 0, world.w-W), ty=clamp(oak.y - H/2, 0, world.h-H);
+      cam.x += (tx-cam.x)*0.08; cam.y += (ty-cam.y)*0.08;
+    }
+    if (c.t >= 220){ const f=c.done; captureAnim=null; f(); }
+  }
+
   // ================= UPDATE =================
   function update(){
     state.t++; Audio.musicTick();
@@ -600,6 +652,7 @@
     if (state.invuln>0) state.invuln--;
     if (state.shake>0.2) state.shake*=0.86; else state.shake=0;
     updateParticles();
+    if (ropeToss){ ropeToss.t++; if (ropeToss.t>60) ropeToss=null; }
 
     // Peter
     const sneaking = keys.sneak;
@@ -676,7 +729,8 @@
     duck.ang+=0.012; duck.x=pond.x+Math.cos(duck.ang)*pond.rx*0.55; duck.y=pond.y+Math.sin(duck.ang)*pond.ry*0.5;
     duck.face=Math.cos(duck.ang)>=0?1:-1;
     duck.dive=clamp(duck.dive+((dist(wolf.x,wolf.y,pond.x,pond.y)<pond.rx+36)?0.05:-0.04),0,1);
-    if (!trap.armed && state.apples>=state.need){ trap.armed=true; flash("All apples! Trap the wolf at the oak (Space) — or flee home 🏡"); }
+    if (!trap.armed && state.apples>=state.need){ trap.armed=true; ropeToss={ t:0, x:oak.x-26, y:oak.y+34 };  // the coil by the oak flips up over the branch
+      flash("All apples! Snare the wolf under the oak (Space) — or flee home 🏡"); }
 
     const d=dist(peter.x,peter.y,wolf.x,wolf.y);
     const hidden=nearCover(peter.x,peter.y);
@@ -806,8 +860,9 @@
     if (pond) drawPond(pond);
     if (state.type==="duck" && duck && !duck.safe) drawGoalRing(pond.x,pond.y,pond.rx+12,pond.ry+10,"safety ▾");
     if (gate) drawGate();
-    if (trap && state.type==="apples") drawTrapCoil(trap);
-    if (state.type==="rope"){ if (oak) drawGoalRing(oak.x,oak.y+oak.r+6,oak.r+10,(oak.r+10)*0.4, trap&&trap.armed?"trap set":"oak"); }
+    if (trap && state.type==="apples" && !trap.armed) drawTrapCoil(trap);
+    if (trap && trap.armed && !captureAnim) drawGoalRing(trap.x, trap.y, 34, 15, "lure the wolf here");
+    if (state.type==="rope" && !trap.armed && oak) drawGoalRing(oak.x,oak.y+oak.r+6,oak.r+10,(oak.r+10)*0.4,"oak");
     if (rope && rope.found && !peter.hasRope) drawRope(rope.x, rope.y, false);
 
     for (const a of apples) if (!a.got) drawApple(a);
@@ -821,8 +876,11 @@
     if (bird)    ents.push({y:bird.y, d:()=>drawBird()});
     if (cat)     ents.push({y:cat.y, d:()=>drawCat(cat)});
     if (peter)   ents.push({y:peter.y, d:()=>drawPeter(peter)});
-    if (wolf)    ents.push({y:wolf.y, d:()=>drawWolf(wolf)});
+    if (wolf && !captureAnim) ents.push({y:wolf.y, d:()=>drawWolf(wolf)});
     ents.sort((a,b)=>a.y-b.y).forEach(e=>e.d());
+
+    if (trap && trap.armed && !captureAnim) drawSnare();   // hangs in front of the foliage
+    if (captureAnim) drawCapture();
 
     for (const p of projectiles) drawProjectile(p);
     drawParticles();
@@ -976,7 +1034,17 @@
     drawShadow(x,w.y+18,22);
     ctx.save(); ctx.translate(x,y);
     ctx.scale(f, w.crouch>0?0.84:(w.pounce>0?1.06:1));   // crouch squash / pounce stretch
-    const hunting = w.stun<=0 && (w.mode==="hunt"||state.type!=="apples");
+    drawWolfBody(w);
+    ctx.restore();
+    if (w.stun>0) drawZzz(x,y);
+    if (w.crouch>0){ ctx.save(); ctx.fillStyle="#ffd45e"; ctx.font="bold 20px Segoe UI"; ctx.textAlign="center";
+      ctx.globalAlpha=0.6+0.4*Math.sin(state.t*0.5); ctx.fillText("❗", x, y-32); ctx.restore(); }
+  }
+
+  // the wolf's body in local coords (origin at its chest) — shared by the walking
+  // sprite and the upside-down "hoisted by the tail" pose in the capture scene
+  function drawWolfBody(w){
+    const hunting = w.stun<=0 && !captureAnim && (w.mode==="hunt"||state.type!=="apples");
     const top = w.stun>0 ? "#9198a3" : hunting?"#686d76":"#797e87";
     const bot = w.stun>0 ? "#6f7580" : hunting?"#454951":"#54585f";
     const sw=Math.sin(w.step*1.1)*5;
@@ -1033,11 +1101,6 @@
     if (hunting){ ctx.fillStyle="rgba(255,90,60,.32)"; ctx.beginPath(); ctx.arc(20,-12.5,4.4,0,7); ctx.fill(); }
     ctx.fillStyle=eyeColor; ctx.beginPath(); ctx.arc(20,-12.5,2.2,0,7); ctx.fill();
     ctx.fillStyle="rgba(255,255,255,.75)"; ctx.beginPath(); ctx.arc(19.2,-13.2,0.8,0,7); ctx.fill();
-
-    ctx.restore();
-    if (w.stun>0) drawZzz(x,y);
-    if (w.crouch>0){ ctx.save(); ctx.fillStyle="#ffd45e"; ctx.font="bold 20px Segoe UI"; ctx.textAlign="center";
-      ctx.globalAlpha=0.6+0.4*Math.sin(state.t*0.5); ctx.fillText("❗", x, y-32); ctx.restore(); }
   }
 
   function drawCat(c){
@@ -1208,19 +1271,76 @@
     greens.forEach((c,i)=>{ ctx.fillStyle=c; ctx.beginPath();
       ctx.arc(o.x-30+sway,o.y-28-i*6,40-i*5,0,7); ctx.arc(o.x+28+sway,o.y-28-i*6,40-i*5,0,7);
       ctx.arc(o.x+sway,o.y-54-i*6,46-i*5,0,7); ctx.fill(); });
-    if (trap && trap.armed && state.type==="rope"){ ctx.strokeStyle="#caa15a"; ctx.lineWidth=2.5;
-      ctx.beginPath(); ctx.moveTo(o.x+38,o.y-20); ctx.lineTo(trap.x,trap.y); ctx.stroke(); drawRope(trap.x,trap.y,true); }
   }
 
-  function drawTrapCoil(tr){
+  function drawTrapCoil(tr){          // the un-armed coil waiting by the oak (level 1)
     ctx.save();
-    if (tr.armed){ ctx.strokeStyle="#caa15a"; ctx.lineWidth=2.5; ctx.beginPath(); ctx.moveTo(oak.x+34,oak.y-18); ctx.lineTo(tr.x,tr.y); ctx.stroke();
-      ctx.globalAlpha=0.22+Math.sin(state.t*0.12)*0.12; ctx.fillStyle="#e7c46b"; ctx.beginPath(); ctx.ellipse(tr.x,tr.y,tr.r+7,(tr.r+7)*0.5,0,0,7); ctx.fill(); ctx.globalAlpha=1; }
-    const pulse=tr.armed?1+Math.sin(state.t*0.12)*0.1:1;
-    ctx.translate(tr.x,tr.y); ctx.scale(1,0.5);
-    ctx.strokeStyle=tr.armed?"#e7c46b":"#9b8a63"; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(0,0,tr.r*pulse,0,7); ctx.stroke();
-    ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(0,0,tr.r*0.66*pulse,0,7); ctx.stroke();
+    ctx.translate(tr.x-58,tr.y-6); ctx.scale(1,0.5);
+    ctx.strokeStyle="#9b8a63"; ctx.lineWidth=4; ctx.beginPath(); ctx.arc(0,0,16,0,7); ctx.stroke();
+    ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(0,0,10,0,7); ctx.stroke();
     ctx.restore();
+  }
+
+  // ---- the armed snare: rope over the branch, noose dangling underneath ----
+  function drawSnare(){
+    const b = branchTip();
+    if (ropeToss && ropeToss.t < 26){                 // the coil arcs up over the branch
+      const p = ropeToss.t/26;
+      const x = lerp(ropeToss.x, b.x, p), y = lerp(ropeToss.y, b.y, p) - Math.sin(p*Math.PI)*80;
+      ctx.save(); ctx.translate(x,y); ctx.rotate(p*9); ctx.scale(1,0.7);
+      ctx.strokeStyle="#caa15a"; ctx.lineWidth=3.5; ctx.beginPath(); ctx.arc(0,0,9,0,7); ctx.stroke();
+      ctx.lineWidth=2; ctx.beginPath(); ctx.arc(0,0,5,0,7); ctx.stroke();
+      ctx.restore(); return;
+    }
+    const drop = ropeToss ? Math.min(1,(ropeToss.t-26)/22) : 1;   // noose slides down to hunting height
+    const sway = Math.sin(state.t*0.045)*5;
+    const nx = b.x + sway, ny = lerp(b.y+14, trap.y-26, drop);    // bottom of the rope
+    ctx.save();
+    ctx.strokeStyle="#caa15a"; ctx.lineWidth=3; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.quadraticCurveTo(b.x+sway*0.4, (b.y+ny)/2, nx, ny); ctx.stroke();
+    // the open noose
+    ctx.lineWidth=2.6; ctx.beginPath(); ctx.ellipse(nx, ny+9, 12, 8, sway*0.02, 0, 7); ctx.stroke();
+    ctx.strokeStyle="rgba(255,232,168,.5)"; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.ellipse(nx, ny+9, 12, 8, sway*0.02, 0, 7); ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---- capture scene: the noose grabs the wolf's tail and hoists it into the oak ----
+  function drawCapture(){
+    const c = captureAnim, b = branchTip(), groundY = oak.y+46;
+    if (c.t < 14){
+      // the rope whips down and snags the tail while the wolf is dragged under the branch
+      ctx.save(); ctx.strokeStyle="#caa15a"; ctx.lineWidth=3; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(b.x,b.y); ctx.lineTo(wolf.x-14*wolf.face, wolf.y+2); ctx.stroke(); ctx.restore();
+      drawWolf(wolf);
+      ctx.save(); ctx.fillStyle="#ffd45e"; ctx.font="bold 22px Segoe UI"; ctx.textAlign="center";
+      ctx.fillText("❗", wolf.x, wolf.y-34); ctx.restore();
+      return;
+    }
+    // hoist: rope shortens, wolf tips tail-up and rises to dangle under the branch
+    const p = Math.min(1,(c.t-14)/60), e = 1-Math.pow(1-p,3);     // eased lift
+    const L = lerp(groundY-b.y, 58, e);                            // rope length
+    const amp = 0.34*e*Math.pow(0.994,Math.max(0,c.t-74));         // swing builds then calms
+    const swing = Math.sin(c.t*0.065)*amp;
+    ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(swing);
+    ctx.strokeStyle="#caa15a"; ctx.lineWidth=3; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,L); ctx.stroke();
+    ctx.translate(0,L);
+    // cinched noose around the tail
+    ctx.lineWidth=2.4; ctx.beginPath(); ctx.ellipse(0,2,5.5,4,0,0,7); ctx.stroke();
+    // wolf rotates tail-up as it leaves the ground; wiggle while dangling
+    ctx.rotate(e*1.65 + Math.sin(c.t*0.3)*0.07*e);
+    ctx.translate(22,-4);                                          // tail base -> rope end
+    drawWolfBody(wolf);
+    ctx.restore();
+    // dizzy stars over the dangling wolf's head
+    if (p >= 1){
+      const wx = b.x + Math.sin(swing)*L, wy = b.y + Math.cos(swing)*L + 34;
+      ctx.save(); ctx.font="16px Segoe UI"; ctx.textAlign="center";
+      ctx.globalAlpha = 0.65 + 0.35*Math.sin(c.t*0.2);
+      ctx.fillText("💫", wx + Math.cos(c.t*0.11)*14, wy + Math.sin(c.t*0.11)*5);
+      ctx.restore();
+    }
   }
 
   function drawRope(x,y,armed){
@@ -1234,7 +1354,7 @@
   }
 
   // ================= FLOW =================
-  function loop(){ if (state.mode==="play") update(); draw(); requestAnimationFrame(loop); }
+  function loop(){ if (state.mode==="play") update(); else if (state.mode==="capture") updateCapture(); draw(); requestAnimationFrame(loop); }
 
   function showModal(title, body, btn){ mTitle.textContent=title; mBody.innerHTML=body; startBtn.textContent=btn; overlay.classList.add("show"); }
   function hideModal(){ overlay.classList.remove("show"); }

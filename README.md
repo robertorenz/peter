@@ -29,6 +29,10 @@ Open `index.html` in any modern browser. That's it.
   leaps in a straight line — sidestep the telegraph to survive.
 - **Score, stars & best**: apples, speed and hearts kept all earn points; each level
   ends with a ★-rating and your best total is saved between sessions.
+- **A real capture scene**: setting the trap tosses the rope over the oak's branch,
+  where the noose dangles and sways; springing it plays a full cutscene — the rope
+  snaps around the wolf's tail, yanks it under the branch and **hauls it up into the
+  tree**, upside-down and kicking, while Grandpa hurries over and the branch creaks.
 - **A minimap** in the corner of every big scrolling level shows friends, foes and the goal.
 - **Each level has its own light**: day meadow, golden afternoon with drifting leaves,
   blue dusk, and a night forest full of fireflies.
@@ -39,7 +43,10 @@ Open `index.html` in any modern browser. That's it.
 1. **Collect every apple** scattered in the meadow.
 2. Then choose your ending:
    - **Escape** — slip home through the **gate** on the right, *or*
-   - **Hero's ending** — lure the wolf onto the **rope-trap by the old oak** and press `Space` to catch it by the tail, just like in the story.
+   - **Hero's ending** — once the apples are gathered, the rope flips up **over the
+     old oak's branch** and hangs as a **snare**. Lure the wolf underneath and press
+     `Space` — the noose snags its **tail** and hoists it up into the tree, where it
+     dangles upside-down, flailing and swinging, just like in the story.
 3. Don't let the wolf **catch you** — and don't let its **suspicion meter** fill up.
 
 ## 🎵 Music & friends
