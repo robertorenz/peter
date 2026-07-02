@@ -524,6 +524,23 @@
     }
   }
 
+  // ---- a pair of hunters occasionally patrols through the trees ----
+  let patrol = null;
+  function updatePatrol(){
+    if (!patrol){
+      if (Math.random() < 1/2600){                    // a rare sight — every ~40s or so
+        const dir = Math.random()<0.5 ? 1 : -1;
+        patrol = { dir, t:0, spd:rand(0.85,1.15),
+          x: dir>0 ? cam.x-70 : cam.x+W+70,
+          y: clamp(cam.y + rand(H*0.18, H*0.82), 70, world.h-70) };
+      }
+      return;
+    }
+    patrol.t++; patrol.x += patrol.dir*patrol.spd;
+    patrol.y += Math.sin(patrol.t*0.017)*0.35;        // an unhurried, wandering line
+    if (patrol.t>140 && (patrol.x < cam.x-190 || patrol.x > cam.x+W+190)) patrol = null;
+  }
+
   // ---- an occasional dove glides across the meadow ----
   let dove = null;
   function updateDove(){
@@ -614,7 +631,7 @@
     state.level=idx; state.type=L.type; state.alert=0; state.apples=0;
     state.t=0; state.invuln=70; state.won=false; state.phase=""; projectiles=[];
     obstacles=[]; apples=[]; pond=oak=gate=trap=rope=cat=grandpa=null; duck=bird=null;
-    state.hearts=3; state.shake=0; particles=[]; flies=[]; dove=null; captureAnim=null; ropeToss=null;
+    state.hearts=3; state.shake=0; particles=[]; flies=[]; dove=null; patrol=null; captureAnim=null; ropeToss=null;
     lvlNum.textContent = idx+1; lvlName.textContent = L.name;
     updateHearts();
 
@@ -855,6 +872,7 @@
     updateParticles();
     updateDove();
     updateDragonflies();
+    updatePatrol();
     if (ropeToss){ ropeToss.t++; if (ropeToss.t>60) ropeToss=null; }
 
     // Peter
@@ -1082,6 +1100,11 @@
     if (cat)     ents.push({y:cat.y, d:()=>drawCat(cat)});
     if (peter)   ents.push({y:peter.y, d:()=>drawPeter(peter)});
     if (wolf && !captureAnim) ents.push({y:wolf.y, d:()=>drawWolf(wolf)});
+    if (patrol){
+      const P=patrol, st=P.t*0.11;
+      ents.push({y:P.y, d:()=>drawHunter(P.x, P.y, st, "#5d6247", "#4a3524", P.dir, false)});
+      ents.push({y:P.y+12, d:()=>drawHunter(P.x-P.dir*42, P.y+12, st+2.1, "#3f6b46", "#6e4a2c", P.dir, false)});
+    }
     ents.sort((a,b)=>a.y-b.y).forEach(e=>e.d());
 
     if (trap && trap.armed && !captureAnim) drawSnare();   // hangs in front of the foliage
@@ -1608,10 +1631,10 @@
     }
   }
 
-  // ---- a hunter for the procession: coat, brimmed hat, slung rifle ----
-  function drawHunter(x, y, step, coat, hatc){
+  // ---- a hunter: coat, brimmed hat, slung rifle (pole arm for the parade, swinging arm on patrol) ----
+  function drawHunter(x, y, step, coat, hatc, dir=1, pole=true){
     drawShadow(x, y+16, 14);
-    ctx.save(); ctx.translate(x,y);
+    ctx.save(); ctx.translate(x,y); ctx.scale(dir,1);
     const sw = Math.sin(step)*4;
     ctx.strokeStyle="#2f3a30"; ctx.lineWidth=5.5; ctx.lineCap="round";
     ctx.beginPath(); ctx.moveTo(-3,8); ctx.lineTo(-3+sw,17); ctx.stroke();
@@ -1624,9 +1647,15 @@
     ctx.fillStyle=coat; ctx.beginPath(); ctx.roundRect(-9,-9,18,19,6); ctx.fill();
     ctx.fillStyle="rgba(0,0,0,.15)"; ctx.fillRect(-9,5,18,5);
     ctx.fillStyle="#7a4a26"; ctx.fillRect(-9,4,18,3);                      // belt
-    ctx.strokeStyle=coat; ctx.lineWidth=5; ctx.lineCap="round";            // arm up steadying the pole
-    ctx.beginPath(); ctx.moveTo(4,-4); ctx.lineTo(8,-26); ctx.stroke();
-    ctx.fillStyle="#f0c79b"; ctx.beginPath(); ctx.arc(8,-27,3,0,7); ctx.fill();
+    if (pole){                                                             // arm up steadying the pole
+      ctx.strokeStyle=coat; ctx.lineWidth=5; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(4,-4); ctx.lineTo(8,-26); ctx.stroke();
+      ctx.fillStyle="#f0c79b"; ctx.beginPath(); ctx.arc(8,-27,3,0,7); ctx.fill();
+    } else {                                                               // marching arm swings
+      ctx.strokeStyle=coat; ctx.lineWidth=5; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(5,-3); ctx.lineTo(9+sw*0.5,4+Math.abs(sw)*0.3); ctx.stroke();
+      ctx.fillStyle="#f0c79b"; ctx.beginPath(); ctx.arc(9+sw*0.5,5+Math.abs(sw)*0.3,3,0,7); ctx.fill();
+    }
     ctx.fillStyle="#eec49a"; ctx.beginPath(); ctx.arc(1,-15,8.5,0,7); ctx.fill();
     ctx.fillStyle="#5a4632"; ctx.beginPath(); ctx.ellipse(4,-11.5,4.5,2,0.1,0,7); ctx.fill();   // mustache
     ctx.fillStyle=hatc;
