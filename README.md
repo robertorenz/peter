@@ -138,7 +138,11 @@ as a folder if you prefer not to use the portable exe.
 
 ## 🎯 How to win
 
-1. **Collect every apple** scattered in the meadow.
+1. **Collect every apple** scattered in the meadow — each apple wears a **number
+   badge**, and they must be picked up **in order** (1, 2, 3, …). The next apple in
+   the sequence glows gold, the HUD shows which number is next, and it shines as a
+   brighter gold dot on the minimap. Touching the wrong apple does nothing but a
+   gentle reminder.
 2. Then choose your ending:
    - **Escape** — slip home through the **gate** on the right, *or*
    - **Hero's ending** — once the apples are gathered, the rope flips up **over the

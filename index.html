@@ -158,8 +158,8 @@
           <div class="crest">🐺</div>
           <h2 id="mTitle">Peter and the Wolf</h2>
           <p id="mBody">
-            Six little adventures in the great green meadow. First, gather every apple and
-            slip home through the <b>gate</b> — but keep clear of the prowling <b>wolf</b>.
+            Six little adventures in the great green meadow. First, gather the numbered apples
+            <b>in order</b> and slip home through the <b>gate</b> — but keep clear of the prowling <b>wolf</b>.
           </p>
           <p class="keys">
             Move with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> /
@@ -711,7 +711,7 @@
   const LEVELS = [
     { type:"apples", name:"The Meadow",
       tale:"Early one morning, Peter opened the gate and went out into the big green meadow.",
-      brief:"Gather every apple, then slip home through the <b>gate</b> — or lure the wolf onto the <b>rope by the old oak</b> and press <kbd>Space</kbd> for a hero's ending." },
+      brief:"The apples are numbered — gather them <b>in order, 1 to last</b> (the glowing one is next), then slip home through the <b>gate</b> — or lure the wolf onto the <b>rope by the old oak</b> and press <kbd>Space</kbd> for a hero's ending." },
     { type:"bird", name:"Save the Bird",
       tale:"On the branch of a big tree sat a little bird, Peter's friend. “All is quiet,” chirped the bird gaily.",
       brief:"The <b>cat</b> is stalking the little <b>bird</b>! Throw apples with <kbd>Space</kbd> to <b>freeze the cat</b>, and lead the bird to the safety of the <b>tall tree</b>." },
@@ -751,7 +751,7 @@
   }
 
   const state = { mode:"menu", round:1, level:0, type:"apples", scroll:false,
-                  t:0, alert:0, apples:0, need:0, objective:"", phase:"", invuln:0,
+                  t:0, alert:0, apples:0, need:0, nextApple:1, objective:"", phase:"", invuln:0,
                   flashMsg:"", flashT:0, won:false,
                   hearts:3, score:0, shake:0, gust:0, rain:0, season:"Storybook" };
   const bestScore = () => +(localStorage.getItem("pw_best") || 0);
@@ -816,7 +816,11 @@
     const keep=[{x:120,y:world.h/2,d:170},{x:pond.x,y:pond.y,d:160},{x:oak.x,y:oak.y,d:170},{x:gate.x,y:gate.y,d:210}];
     addObstacles(11+round, ["tree","tree","rock"], keep);   // mostly trees (cover from the wolf)
     state.need = 5 + round;
-    for (let i=0;i<state.need;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+44}))),120,80); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7)}); }
+    // number the apples 1..N in random order — they must be gathered in sequence
+    const order = Array.from({length:state.need}, (_,i)=>i+1);
+    for (let i=order.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
+    for (let i=0;i<state.need;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+44}))),120,80); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),num:order[i]}); }
+    state.nextApple = 1;
     peter = mkPeter(120,world.h/2);
     wolf  = mkWolf(world.w*0.5,140, 1.5+round*0.1);
     duck  = { mode:"swim", ang:rand(0,7), dive:0, x:pond.x, y:pond.y, face:1, r:11, safe:false };
@@ -1316,11 +1320,18 @@
     }
     projectiles = projectiles.filter(p=>!p.dead);
 
-    // apple pickups
+    // apple pickups (numbered apples must be taken in order)
     for (const a of apples){
-      if (!a.got && dist(peter.x,peter.y,a.x,a.y) < peter.r+13){ a.got=true; state.apples++; state.score+=50; Audio.pickup();
+      if (a.hintCd > 0) a.hintCd--;
+      if (!a.got && dist(peter.x,peter.y,a.x,a.y) < peter.r+13){
+        if (a.num && a.num !== state.nextApple){
+          if (!(a.hintCd > 0)){ a.hintCd = 60; flash(`🍎 Not this one — apple <b>${state.nextApple}</b> comes next!`); }
+          continue;
+        }
+        a.got=true; if (a.num) state.nextApple++;
+        state.apples++; state.score+=50; Audio.pickup();
         burst(a.x, a.y-4, 10, ["#ffd45e","#fff3c4","#e25a44"], 2.2, 28, 0.03);
-        flash(a.ammo ? "🍎 picked up (ammo)" : "🍎 +1"); }
+        flash(a.ammo ? "🍎 picked up (ammo)" : a.num ? `🍎 apple ${a.num}!` : "🍎 +1"); }
     }
     // gentle ammo respawn for throw levels
     if ((state.type==="bird"||state.type==="duck"||state.type==="rope"||state.type==="escort"||state.type==="chase"||state.type==="endless") && state.t%280===0){
@@ -1550,7 +1561,8 @@
   function updateHUD(){
     scorePill.textContent = state.score;
     if (state.type==="apples"){ objPill.style.display=""; ammoPill.style.display="none";
-      objPill.innerHTML = `🍎 Apples <b>${state.apples}</b> / ${state.need}`; }
+      objPill.innerHTML = `🍎 Apples <b>${state.apples}</b> / ${state.need}` +
+        (state.nextApple<=state.need ? ` · next <b>#${state.nextApple}</b>` : ""); }
     else if (state.type==="rope"){ objPill.style.display=""; ammoPill.style.display="";
       objPill.textContent = (peter.hasRope?"🪢 ":"") + state.objective; ammoPill.innerHTML = `🍎 × <b>${state.apples}</b>`; }
     else { objPill.style.display=""; ammoPill.style.display="";
@@ -1764,8 +1776,12 @@
     if ((state.type==="duck") && pond){ ctx.beginPath(); ctx.ellipse(mx+pond.x*sx,my+pond.y*sy,pond.rx*sx,pond.ry*sy,0,0,7); ctx.fillStyle="#6fc3d8"; ctx.fill(); }
     if ((state.type==="bird"||state.type==="rope") && oak){ ctx.fillStyle="#7fd67a"; ctx.beginPath(); ctx.arc(mx+oak.x*sx,my+oak.y*sy,3.4,0,7); ctx.fill(); }
     // apples left (objective level only)
-    if (state.type==="apples"){ ctx.fillStyle="#e25a44";
-      for (const a of apples) if (!a.got){ ctx.fillRect(mx+a.x*sx-1, my+a.y*sy-1, 2, 2); } }
+    if (state.type==="apples"){
+      for (const a of apples) if (!a.got){
+        const isNext = a.num===state.nextApple;
+        ctx.fillStyle = isNext ? "#ffd45e" : "#e25a44";
+        const s2 = isNext ? 2 : 1;
+        ctx.fillRect(mx+a.x*sx-s2, my+a.y*sy-s2, s2*2, s2*2); } }
     // friends & foes
     const dot=(e,c,r)=>{ if(!e||e.gone) return; ctx.fillStyle=c; ctx.beginPath(); ctx.arc(mx+e.x*sx,my+e.y*sy,r,0,7); ctx.fill(); };
     dot(duck,"#f4f1e8",2.4); dot(bird,"#f4f1e8",2.2);
@@ -2181,12 +2197,26 @@
 
   function drawApple(a){
     const bob=Math.sin(state.t*0.05+a.bob)*2;
+    const isNext = a.num && a.num===state.nextApple;
     ctx.save(); ctx.translate(a.x,a.y+bob);
+    if (isNext){
+      const pulse = 0.5+0.5*Math.sin(state.t*0.12);
+      ctx.strokeStyle=`rgba(255,212,94,${0.45+0.4*pulse})`; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.arc(0,0,13+pulse*3,0,7); ctx.stroke();
+    }
     ctx.fillStyle="rgba(20,30,20,.18)"; ctx.beginPath(); ctx.ellipse(0,12,9,3,0,0,7); ctx.fill();
     ctx.fillStyle="#c43d2e"; ctx.beginPath(); ctx.arc(0,0,8,0,7); ctx.fill();
     ctx.fillStyle="#e25a44"; ctx.beginPath(); ctx.arc(-2.5,-2.5,3,0,7); ctx.fill();
     ctx.strokeStyle="#6f4a28"; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,-7); ctx.lineTo(2,-12); ctx.stroke();
     ctx.fillStyle="#4f8a45"; ctx.beginPath(); ctx.ellipse(5,-11,4,2,0.6,0,7); ctx.fill();
+    if (a.num){
+      ctx.fillStyle = isNext ? "#ffd45e" : "rgba(255,255,255,.85)";
+      ctx.strokeStyle="rgba(40,30,20,.55)"; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(0,-21,8,0,7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#3a2a1a"; ctx.font="bold 11px 'Segoe UI', sans-serif";
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText(a.num, 0, -20.5);
+    }
     ctx.restore();
   }
 
