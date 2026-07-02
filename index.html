@@ -90,13 +90,19 @@
   .overlay.show { opacity: 1; pointer-events: auto; }
   .modal {
     width: min(86%, 470px);
+    max-height: calc(100% - 24px);
+    overflow-y: auto; overscroll-behavior: contain;
     background: linear-gradient(180deg, #fbf5e4, var(--paper));
     color: var(--ink);
     border-radius: 16px; padding: 26px 28px 24px;
     box-shadow: 0 24px 60px rgba(0,0,0,.5), 0 0 0 1px rgba(0,0,0,.08);
     transform: translateY(10px) scale(.98); transition: transform .25s ease;
     text-align: center;
+    scrollbar-width: thin; scrollbar-color: #c9b98e transparent;
   }
+  .modal::-webkit-scrollbar { width: 8px; }
+  .modal::-webkit-scrollbar-thumb { background: #c9b98e; border-radius: 999px; }
+  .modal::-webkit-scrollbar-track { background: transparent; }
   .overlay.show .modal { transform: none; }
   .modal .crest {
     width: 58px; height: 58px; margin: 0 auto 10px; border-radius: 50%;
