@@ -60,6 +60,13 @@ as a folder if you prefer not to use the portable exe.
 - **A minimap** in the corner of every big scrolling level shows friends, foes and the goal.
 - **Each level has its own light**: day meadow, golden afternoon with drifting leaves,
   blue dusk, and a night forest full of fireflies.
+- **A living meadow**: cloud shadows drift across the grass, soft sun shafts and sunlit
+  patches warm the day levels, wind waves ripple through swaying grass and real petaled
+  flowers, butterflies flutter between blooms, pollen floats in the light, and the pond
+  glitters around a drifting lily pad.
+- **Character acting**: Peter blinks and his cap tassel swings as he runs, the wolf's
+  ear flicks and its hunting eye pulses red, and both kick up little dust puffs at full
+  speed.
 - Particles, screen shake and hurt-blinks make every splat, pickup and close call land.
 
 ## 🎯 How to win

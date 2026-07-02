@@ -411,13 +411,74 @@
     if (state.level===1 && state.t%26===0)
       particles.push({ x:cam.x+rand(0,W), y:cam.y-10, vx:rand(-0.4,0.6), vy:rand(0.5,0.9), g:0.001,
         life:240, max:240, c:["#d9a441","#c96a35","#e8d24a"][(Math.random()*3)|0], r:rand(2,3.2) });
+    // sun-lit pollen drifting over the day meadows
+    if (!PALETTES[state.level].night && state.t%30===0)
+      particles.push({ x:cam.x+rand(0,W), y:cam.y+rand(0,H), vx:rand(-0.25,0.25), vy:rand(-0.14,0.04), g:-0.0004,
+        life:210, max:210, c:"rgba(255,252,222,.75)", r:rand(1,1.9) });
+    // little dust puffs kicked up at running feet
+    if (peter){
+      const d = Math.hypot(peter.x-lastPX, peter.y-lastPY);
+      if (d>1.5 && state.t%7===0)
+        particles.push({ x:peter.x-peter.face*5+rand(-3,3), y:peter.y+15, vx:-peter.face*0.3+rand(-0.2,0.2),
+          vy:rand(-0.3,-0.08), g:-0.002, life:22, max:22, c:"rgba(233,225,180,.5)", r:rand(1.5,2.6) });
+      lastPX=peter.x; lastPY=peter.y;
+    }
+    if (wolf && wolf.mode==="hunt" && wolf.stun<=0 && state.t%6===0)
+      particles.push({ x:wolf.x-wolf.face*14+rand(-4,4), y:wolf.y+18, vx:-wolf.face*0.4+rand(-0.2,0.2),
+        vy:rand(-0.25,-0.05), g:-0.002, life:18, max:18, c:"rgba(210,205,170,.45)", r:rand(1.6,2.8) });
   }
+  let lastPX=0, lastPY=0;
   function drawParticles(){
     for (const p of particles){
       ctx.globalAlpha = Math.min(1, p.life/28);
       ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,7); ctx.fill();
     }
     ctx.globalAlpha = 1;
+  }
+
+  // ---- ambient life: sun patches, cloud shadows, butterflies ----
+  let patches = [], clouds = [], butterflies = [];
+  function buildAmbient(){
+    patches = []; clouds = []; butterflies = [];
+    for (let i=0;i<8;i++) patches.push({ x:rand(0,world.w), y:rand(0,world.h), r:rand(90,220) });
+    for (let i=0;i<5;i++) clouds.push({ x:rand(0,world.w), y:rand(0,world.h), r:rand(90,170),
+      spd:rand(0.10,0.22), squash:rand(0.45,0.62) });
+    if (!PALETTES[state.level].night){
+      const flowers = decor.filter(d=>d.k==="flower");
+      const n = Math.min(7, Math.max(3, Math.round(world.w*world.h/220000)));
+      for (let i=0;i<n;i++){
+        const home = flowers.length ? flowers[(Math.random()*flowers.length)|0] : {x:rand(0,world.w),y:rand(0,world.h)};
+        butterflies.push({ x:home.x, y:home.y-8, ph:rand(0,7), s1:rand(0.7,1.3), s2:rand(0.7,1.3),
+          c:["#e8894a","#e3b23c","#8fb7e8","#f2ede0","#d98cd0"][(Math.random()*5)|0] });
+      }
+    }
+  }
+  function drawCloudShadows(){
+    for (const c of clouds){
+      const span = world.w + 2*c.r;
+      const cx = ((c.x + state.t*c.spd) % span + span) % span - c.r;
+      if (cx-c.r>cam.x+W || cx+c.r<cam.x || c.y-c.r>cam.y+H || c.y+c.r<cam.y) continue;
+      const g = ctx.createRadialGradient(0,0,c.r*0.25,0,0,c.r);
+      g.addColorStop(0,"rgba(24,44,30,.10)"); g.addColorStop(0.7,"rgba(24,44,30,.07)"); g.addColorStop(1,"rgba(24,44,30,0)");
+      ctx.save(); ctx.translate(cx,c.y); ctx.scale(1,c.squash);
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,c.r,0,7); ctx.fill(); ctx.restore();
+    }
+  }
+  function drawButterflies(){
+    for (const bf of butterflies){
+      const t=state.t;
+      const x = bf.x + Math.sin(t*0.006*bf.s1+bf.ph)*70 + Math.sin(t*0.023+bf.ph*2)*14;
+      const y = bf.y + Math.cos(t*0.009*bf.s2+bf.ph)*46 + Math.sin(t*0.016+bf.ph)*9;
+      const dirX = Math.cos(t*0.006*bf.s1+bf.ph);
+      const flap = 0.35 + 0.65*Math.abs(Math.sin(t*0.42+bf.ph*5));
+      ctx.save(); ctx.translate(x,y); if (dirX<0) ctx.scale(-1,1);
+      ctx.fillStyle="rgba(20,30,20,.12)"; ctx.beginPath(); ctx.ellipse(0,13,3.5,1.3,0,0,7); ctx.fill();
+      ctx.fillStyle=bf.c;
+      ctx.beginPath(); ctx.ellipse(-1.5,-2.6*flap,2.2,3.4*flap,-0.35,0,7); ctx.fill();   // upper wing
+      ctx.beginPath(); ctx.ellipse(-1.2, 2.2*flap,1.8,2.6*flap, 0.35,0,7); ctx.fill();   // lower wing
+      ctx.fillStyle="rgba(40,40,52,.9)"; ctx.beginPath(); ctx.ellipse(0.6,0,2.6,1,0,0,7); ctx.fill();
+      ctx.restore();
+    }
   }
 
   let flies = [];   // fireflies for the night level
@@ -486,6 +547,7 @@
 
     state.scroll = world.w > W || world.h > H;
     scatterDecor(Math.round(world.w*world.h/16000));
+    buildAmbient();
     if (PALETTES[state.level].night)
       for (let i=0;i<26;i++) flies.push({ x:rand(40,world.w-40), y:rand(40,world.h-40), ph:rand(0,7) });
     centerCamera();
@@ -919,6 +981,7 @@
 
     // ground features
     if (state.scroll) { ctx.strokeStyle="rgba(40,70,40,.5)"; ctx.lineWidth=6; ctx.strokeRect(0,0,world.w,world.h); }
+    drawCloudShadows();
     if (pond) drawPond(pond);
     if (state.type==="duck" && duck && !duck.safe) drawGoalRing(pond.x,pond.y,pond.rx+12,pond.ry+10,"safety ▾");
     if (gate) drawGate();
@@ -945,9 +1008,24 @@
     if (captureAnim) drawCapture();
 
     for (const p of projectiles) drawProjectile(p);
+    drawButterflies();
     drawParticles();
     if (PALETTES[state.level].night) drawFireflies();
     ctx.restore();
+
+    // atmosphere: soft sun shafts on the day levels (screen space)
+    if (state.level<2){
+      for (let i=0;i<3;i++){
+        const a = 0.026 + 0.02*Math.sin(state.t*0.008 + i*2.1);
+        if (a<=0.006) continue;
+        const x0 = W*0.12 + i*W*0.3;
+        const g = ctx.createLinearGradient(0,0,0,H*0.95);
+        g.addColorStop(0,"#fff8cf"); g.addColorStop(1,"rgba(255,248,207,0)");
+        ctx.save(); ctx.globalAlpha=a; ctx.fillStyle=g;
+        ctx.beginPath(); ctx.moveTo(x0,-20); ctx.lineTo(x0+90,-20); ctx.lineTo(x0+240,H); ctx.lineTo(x0+150,H); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+    }
 
     // atmosphere: level tint + soft vignette (screen space)
     const pal = PALETTES[state.level];
@@ -974,14 +1052,33 @@
     const g=ctx.createLinearGradient(0,0,0,H);
     g.addColorStop(0,pal.top); g.addColorStop(1,pal.bot);
     ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
-    // decor tufts/flowers (world coords -> screen)
+    // warm sun-lit patches in the grass (world coords -> screen)
+    for (const pa of patches){
+      const px=pa.x-cam.x, py=pa.y-cam.y;
+      if (px<-pa.r||px>W+pa.r||py<-pa.r||py>H+pa.r) continue;
+      const lg=ctx.createRadialGradient(px,py,0,px,py,pa.r);
+      lg.addColorStop(0,"rgba(255,250,190,.10)"); lg.addColorStop(1,"rgba(255,250,190,0)");
+      ctx.fillStyle=lg; ctx.beginPath(); ctx.arc(px,py,pa.r,0,7); ctx.fill();
+    }
+    // decor tufts/flowers — a wind wave travels through them
     for (const f of decor){
       const sx=f.x-cam.x, sy=f.y-cam.y;
-      if (sx<-10||sx>W+10||sy<-10||sy>H+10) continue;
-      if (f.k==="tuft"){ ctx.strokeStyle="rgba(50,90,45,.5)"; ctx.lineWidth=2;
-        ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx-3,sy-6); ctx.moveTo(sx,sy); ctx.lineTo(sx,sy-7); ctx.moveTo(sx,sy); ctx.lineTo(sx+3,sy-6); ctx.stroke();
-      } else { ctx.fillStyle=f.c; ctx.beginPath(); ctx.arc(sx,sy,2.4,0,7); ctx.fill();
-        ctx.fillStyle="#f7e58a"; ctx.beginPath(); ctx.arc(sx,sy,1,0,7); ctx.fill(); }
+      if (sx<-12||sx>W+12||sy<-12||sy>H+12) continue;
+      const wind = Math.sin(state.t*0.035 + f.x*0.013 + f.y*0.007)*1.7;
+      if (f.k==="tuft"){ ctx.strokeStyle="rgba(50,90,45,.5)"; ctx.lineWidth=2; ctx.lineCap="round";
+        ctx.beginPath(); ctx.moveTo(sx,sy); ctx.quadraticCurveTo(sx-2,sy-4, sx-3+wind,sy-6);
+        ctx.moveTo(sx,sy); ctx.quadraticCurveTo(sx,sy-4, sx+wind,sy-7);
+        ctx.moveTo(sx,sy); ctx.quadraticCurveTo(sx+2,sy-4, sx+3+wind,sy-6); ctx.stroke();
+      } else {
+        ctx.strokeStyle="rgba(50,90,45,.55)"; ctx.lineWidth=1.6; ctx.lineCap="round";
+        ctx.beginPath(); ctx.moveTo(sx,sy+5); ctx.quadraticCurveTo(sx,sy+1, sx+wind*0.6,sy-2); ctx.stroke();
+        ctx.save(); ctx.translate(sx+wind*0.6,sy-2); ctx.rotate(wind*0.09);
+        ctx.fillStyle=f.c;
+        for (let i=0;i<5;i++){ const a=i/5*7;
+          ctx.beginPath(); ctx.ellipse(Math.cos(a)*2.6,Math.sin(a)*2.6,2.1,1.3,a,0,7); ctx.fill(); }
+        ctx.fillStyle="#f7e58a"; ctx.beginPath(); ctx.arc(0,0,1.6,0,7); ctx.fill();
+        ctx.restore();
+      }
     }
   }
 
@@ -1076,13 +1173,15 @@
     ctx.fillStyle="#c43d2e"; ctx.beginPath(); ctx.arc(2,-20,8.6,Math.PI,0); ctx.fill();
     ctx.fillStyle="#a8301f"; ctx.beginPath(); ctx.ellipse(2,-20,8.6,2.4,0,0,Math.PI); ctx.fill();  // brim shadow
     ctx.fillStyle="#c43d2e"; ctx.fillRect(-6.6,-21,17.2,3.4);
-    ctx.beginPath(); ctx.arc(9.5,-27.5,2.3,0,7); ctx.fill();   // tassel ball
-    ctx.strokeStyle="#a8301f"; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(5,-27); ctx.lineTo(9.5,-27.5); ctx.stroke();
+    const tas = Math.sin(p.step*0.8)*2 + Math.sin(state.t*0.05)*0.8;   // tassel swings as he walks
+    ctx.beginPath(); ctx.arc(9.5+tas,-27.5+Math.abs(tas)*0.2,2.3,0,7); ctx.fill();   // tassel ball
+    ctx.strokeStyle="#a8301f"; ctx.lineWidth=1.4; ctx.beginPath(); ctx.moveTo(5,-27); ctx.lineTo(9.5+tas,-27.5+Math.abs(tas)*0.2); ctx.stroke();
 
-    // face
+    // face (with a blink every few seconds)
     ctx.fillStyle="#e8a67c"; ctx.globalAlpha=0.55; ctx.beginPath(); ctx.arc(1,-11.5,2,0,7); ctx.fill(); ctx.globalAlpha=1; // cheek
-    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.ellipse(6.2,-14.6,2.3,2,0,0,7); ctx.fill();
-    ctx.fillStyle="#26303a"; ctx.beginPath(); ctx.arc(7,-14.6,1.2,0,7); ctx.fill();
+    const blink = (state.t % 170) < 6 ? 0.15 : 1;
+    ctx.fillStyle="#fff"; ctx.beginPath(); ctx.ellipse(6.2,-14.6,2.3,2*blink,0,0,7); ctx.fill();
+    if (blink===1){ ctx.fillStyle="#26303a"; ctx.beginPath(); ctx.arc(7,-14.6,1.2,0,7); ctx.fill(); }
     ctx.strokeStyle="#a8623c"; ctx.lineWidth=1.3; ctx.lineCap="round";
     ctx.beginPath(); ctx.arc(5,-10.6,2.1,0.1,Math.PI-0.2); ctx.stroke();  // smile
 
@@ -1138,10 +1237,11 @@
     // neck/head
     ctx.fillStyle=bg; ctx.beginPath(); ctx.roundRect(7,-18,19,16,7); ctx.fill();
 
-    // ears (short, rounded base, tucked behind the muzzle)
+    // ears (short, rounded base, tucked behind the muzzle) — the front one flicks now and then
+    const flick = (Math.floor(state.t/110)%3===0 && state.t%110<10) ? Math.sin((state.t%110)/10*Math.PI)*2.4 : 0;
     ctx.fillStyle=top;
     ctx.beginPath(); ctx.moveTo(10,-17); ctx.lineTo(13,-25); ctx.lineTo(18,-16); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(17,-16); ctx.lineTo(21,-23.5); ctx.lineTo(24,-15); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(17,-16); ctx.lineTo(21+flick,-23.5+flick*0.5); ctx.lineTo(24,-15); ctx.closePath(); ctx.fill();
     ctx.fillStyle="#33373d";
     ctx.beginPath(); ctx.moveTo(12,-18); ctx.lineTo(13.5,-22.5); ctx.lineTo(16,-17); ctx.closePath(); ctx.fill();
 
@@ -1160,7 +1260,8 @@
     ctx.strokeStyle="rgba(20,22,26,.55)"; ctx.lineWidth=1.6; ctx.lineCap="round";
     ctx.beginPath(); ctx.moveTo(16,-14); ctx.lineTo(23,-16); ctx.stroke();
     const eyeColor = w.stun>0 ? "#9fb4ff" : hunting?"#ff5a3c":"#e8b64a";
-    if (hunting){ ctx.fillStyle="rgba(255,90,60,.32)"; ctx.beginPath(); ctx.arc(20,-12.5,4.4,0,7); ctx.fill(); }
+    if (hunting){ const pulse=0.26+0.14*Math.sin(state.t*0.28);
+      ctx.fillStyle=`rgba(255,90,60,${pulse.toFixed(3)})`; ctx.beginPath(); ctx.arc(20,-12.5,4.4+Math.sin(state.t*0.28)*0.8,0,7); ctx.fill(); }
     ctx.fillStyle=eyeColor; ctx.beginPath(); ctx.arc(20,-12.5,2.2,0,7); ctx.fill();
     ctx.fillStyle="rgba(255,255,255,.75)"; ctx.beginPath(); ctx.arc(19.2,-13.2,0.8,0,7); ctx.fill();
   }
@@ -1258,10 +1359,14 @@
     const sway=Math.sin(state.t*0.02 + (t.x+t.y))*3;
     ctx.fillStyle="rgba(20,30,20,.18)"; ctx.beginPath(); ctx.ellipse(t.x,t.y+22,30,9,0,0,7); ctx.fill();
     ctx.fillStyle="#7a5230"; ctx.fillRect(t.x-6,t.y-6,12,30);
+    ctx.fillStyle="rgba(40,24,10,.35)"; ctx.fillRect(t.x+2,t.y-6,4,30);   // trunk shading
     const greens=["#3f7a38","#4f8f44","#62a657"];
     greens.forEach((c,i)=>{ ctx.fillStyle=c; ctx.beginPath();
       ctx.arc(t.x-15+sway,t.y-16-i*4,22-i*3,0,7); ctx.arc(t.x+15+sway,t.y-16-i*4,22-i*3,0,7);
       ctx.arc(t.x+sway,t.y-30-i*4,26-i*3,0,7); ctx.fill(); });
+    // sunlit crown
+    ctx.fillStyle="rgba(220,255,170,.20)"; ctx.beginPath();
+    ctx.arc(t.x-9+sway,t.y-42,11,0,7); ctx.arc(t.x+7+sway,t.y-37,7,0,7); ctx.fill();
   }
   function drawRock(o){
     ctx.fillStyle="rgba(20,30,20,.2)"; ctx.beginPath(); ctx.ellipse(o.x,o.y+o.r*0.7,o.r*1.05,o.r*0.4,0,0,7); ctx.fill();
@@ -1310,6 +1415,22 @@
     ctx.strokeStyle="rgba(255,255,255,.3)"; ctx.lineWidth=1.5;
     for (let i=0;i<3;i++){ const rr=(state.t*0.4+i*30)%p.rx; ctx.globalAlpha=0.4*(1-rr/p.rx);
       ctx.beginPath(); ctx.ellipse(p.x,p.y,rr*0.9+6,rr*0.5+3,0,0,7); ctx.stroke(); }
+    ctx.globalAlpha=1;
+    // a drifting lily pad with a blossom
+    const lx=p.x-p.rx*0.42+Math.sin(state.t*0.017)*4, ly=p.y+p.ry*0.28+Math.sin(state.t*0.023)*2;
+    ctx.fillStyle="#3e7d3a"; ctx.beginPath(); ctx.ellipse(lx,ly,9,5.4,0.2,0.5,6.6); ctx.lineTo(lx,ly); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#f2b7d3"; for (let i=0;i<5;i++){ const a=i/5*7+0.4;
+      ctx.beginPath(); ctx.ellipse(lx+3+Math.cos(a)*2.2,ly-3+Math.sin(a)*1.5,1.7,1,a,0,7); ctx.fill(); }
+    ctx.fillStyle="#ffe28a"; ctx.beginPath(); ctx.arc(lx+3,ly-3,1,0,7); ctx.fill();
+    // sun glitter on the water
+    for (let i=0;i<5;i++){
+      const tw = Math.max(0, Math.sin(state.t*0.1 + i*1.9));
+      if (tw<=0.05) continue;
+      const gx = p.x + Math.cos(i*2.4+1)*p.rx*0.62, gy = p.y + Math.sin(i*1.7)*p.ry*0.55;
+      const s = 1.6+tw*2.2;
+      ctx.globalAlpha=tw*0.7; ctx.strokeStyle="#eafcff"; ctx.lineWidth=1.2; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(gx-s,gy); ctx.lineTo(gx+s,gy); ctx.moveTo(gx,gy-s*0.6); ctx.lineTo(gx,gy+s*0.6); ctx.stroke();
+    }
     ctx.globalAlpha=1; ctx.restore();
   }
 
