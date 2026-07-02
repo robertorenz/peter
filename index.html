@@ -130,6 +130,10 @@
   .btn:active { transform: translateY(1px); }
   .foot { margin-top: 14px; font-size: 12px; color:#8a99a2; text-align:center; }
   .foot kbd { font-family: ui-monospace, monospace; }
+  .manual-link { display:inline-block; margin-top:6px; color: var(--gold-deep, #b9822c);
+    font-weight:600; text-decoration:none; }
+  .manual-link:hover { text-decoration:underline; }
+  .titlebar .manual-link { margin:0 0 0 auto; font-size:13px; color: var(--gold); }
 </style>
 </head>
 <body>
@@ -137,6 +141,7 @@
     <div class="titlebar">
       <h1>Peter &amp; the Wolf</h1>
       <span class="sub">a six-part meadow adventure</span>
+      <a class="manual-link" href="manual.html">📖 manual</a>
     </div>
 
     <div class="stage">
@@ -176,7 +181,8 @@
           </p>
           <p class="keys"><label style="cursor:pointer"><input type="checkbox" id="narrateChk" style="vertical-align:-2px"> 🔊 read the story aloud between chapters</label></p>
           <button class="btn" id="startBtn">Begin the tale</button>
-          <div class="foot">Throw apples to freeze the cat &amp; wolf. Hide behind rocks, trees — and inside bushes.</div>
+          <div class="foot">Throw apples to freeze the cat &amp; wolf. Hide behind rocks, trees — and inside bushes.<br>
+            <a class="manual-link" href="manual.html">📖 Read the player's manual</a></div>
         </div>
       </div>
     </div>

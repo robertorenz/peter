@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Peter &amp; the Wolf — Player's Manual</title>
+<style>
+  :root{
+    --ink:#1f2a33; --slate:#2e3d49; --paper:#f4ecd8; --paper-hi:#fbf5e4;
+    --gold:#d9a441; --gold-deep:#b9822c; --meadow:#6fae5f; --teal:#2f7d76; --rust:#b1543a;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh;
+    background:#16222b radial-gradient(1200px 600px at 50% -10%, #24384633, transparent);
+    font-family:"Segoe UI", system-ui, -apple-system, sans-serif;
+    color:var(--ink); padding:28px 14px 60px;
+  }
+  .book{
+    max-width:780px; margin:0 auto;
+    background:linear-gradient(180deg, var(--paper-hi), var(--paper));
+    border-radius:18px; padding:38px 44px 46px;
+    box-shadow:0 24px 60px rgba(0,0,0,.5), 0 0 0 1px rgba(0,0,0,.08),
+               0 0 0 8px #20303a, 0 0 0 9px #0d161c;
+  }
+  header{ text-align:center; margin-bottom:26px; }
+  .crest{
+    width:66px; height:66px; margin:0 auto 12px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #ffe6a8, var(--gold) 60%, var(--gold-deep));
+    display:flex; align-items:center; justify-content:center; font-size:34px;
+    box-shadow:0 6px 16px rgba(185,130,44,.5);
+  }
+  h1{ margin:0; font-family:Georgia, "Times New Roman", serif; font-size:34px; color:var(--slate); letter-spacing:.5px; }
+  .subtitle{ font-style:italic; color:#5a6a73; margin-top:6px; font-size:15px; }
+  .play{
+    display:inline-block; margin-top:18px; text-decoration:none;
+    background:linear-gradient(180deg, var(--gold), var(--gold-deep));
+    color:#2a1e08; font-weight:700; font-size:15px; letter-spacing:.3px;
+    padding:12px 28px; border-radius:10px;
+    box-shadow:0 6px 16px rgba(185,130,44,.45), 0 1px 0 rgba(255,255,255,.4) inset;
+    transition:transform .1s ease, box-shadow .2s ease;
+  }
+  .play:hover{ transform:translateY(-1px); box-shadow:0 9px 20px rgba(185,130,44,.55); }
+  h2{
+    font-family:Georgia, serif; font-size:22px; color:var(--slate);
+    margin:38px 0 10px; padding-bottom:6px; border-bottom:2px solid #e2d5b3;
+  }
+  h2 .ico{ margin-right:8px; }
+  h3{ font-size:15.5px; color:var(--teal); margin:20px 0 6px; }
+  p, li{ font-size:15px; line-height:1.65; color:#3c4a54; }
+  ul{ padding-left:22px; margin:8px 0; }
+  li{ margin:5px 0; }
+  b{ color:var(--ink); }
+  em{ color:#5a6a73; }
+  kbd{
+    display:inline-block; background:#fff; border:1px solid #cfc3a6;
+    border-bottom-width:2px; border-radius:6px; padding:2px 8px; margin:0 2px;
+    font-family:ui-monospace, monospace; font-size:12.5px; color:#3a474f;
+  }
+  table{ width:100%; border-collapse:collapse; margin:12px 0; font-size:14.5px; }
+  th{ text-align:left; color:var(--slate); font-size:13px; text-transform:uppercase;
+      letter-spacing:.6px; padding:8px 10px; border-bottom:2px solid #e2d5b3; }
+  td{ padding:9px 10px; border-bottom:1px solid #eadfc2; vertical-align:top; color:#3c4a54; }
+  tr:last-child td{ border-bottom:none; }
+  .wrap{ overflow-x:auto; }
+  .level{ display:flex; gap:14px; margin:14px 0; }
+  .level .n{
+    flex:0 0 40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 35% 30%, #ffe6a8, var(--gold) 65%, var(--gold-deep));
+    color:#2a1e08; font-weight:800; font-size:17px; box-shadow:0 3px 8px rgba(185,130,44,.4);
+  }
+  .level h3{ margin:2px 0 4px; color:var(--slate); font-size:16px; }
+  .level p{ margin:0; }
+  .tip{
+    background:#eef3e4; border-left:4px solid var(--meadow);
+    border-radius:0 10px 10px 0; padding:10px 16px; margin:14px 0; font-size:14.5px;
+  }
+  .warn{ background:#f6e9df; border-left-color:var(--rust); }
+  .quote{
+    font-family:Georgia, serif; font-style:italic; text-align:center;
+    color:#5a6a73; margin:30px 30px 0; font-size:15.5px;
+  }
+  footer{ text-align:center; margin-top:34px; font-size:13px; color:#8a99a2; }
+  footer a{ color:var(--gold-deep); font-weight:600; }
+  @media (max-width:560px){ .book{ padding:26px 20px 34px; } h1{ font-size:27px; } }
+</style>
+</head>
+<body>
+  <div class="book">
+    <header>
+      <div class="crest">🐺</div>
+      <h1>Peter &amp; the Wolf</h1>
+      <div class="subtitle">The Player's Manual — a six-part meadow adventure after Prokofiev</div>
+      <a class="play" href="index.html">▶ Play the game</a>
+    </header>
+
+    <h2><span class="ico">📖</span>The tale</h2>
+    <p>
+      You are <b>Peter</b>, out in the great green meadow beyond Grandfather's gate. The little
+      <b>bird</b> is your scout, the <b>duck</b> paddles in the pond — and somewhere between the
+      trees prowls the <b>wolf</b>, hunting with its eyes and ears. Six little adventures retell
+      the story: gather the orchard's apples, rescue your friends, walk Grandpa home through the
+      dark, and at last snare the wolf by the tail beneath the old oak, just as in the tale.
+    </p>
+
+    <h2><span class="ico">🎮</span>Controls</h2>
+    <div class="wrap">
+    <table>
+      <tr><th>Action</th><th>Keys</th></tr>
+      <tr><td>Move</td><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or the arrow keys</td></tr>
+      <tr><td>Tip-toe <em>(quiet but slower — the wolf hears running)</em></td><td>hold <kbd>Shift</kbd></td></tr>
+      <tr><td>Act — throw an apple, search, spring the trap, shake a tree</td><td><kbd>Space</kbd></td></tr>
+      <tr><td>Whistle <em>(calls a friend; sends the bird diving at the wolf — but predators hear it)</em></td><td><kbd>E</kbd></td></tr>
+      <tr><td>Drop the rope <em>(chapter 4 — carrying it slows you and blocks throwing)</em></td><td><kbd>Q</kbd></td></tr>
+      <tr><td>Photo mode <em>(hide the HUD for a clean screenshot)</em></td><td><kbd>H</kbd></td></tr>
+      <tr><td>Pause</td><td><kbd>P</kbd></td></tr>
+      <tr><td>Mute / unmute</td><td><kbd>M</kbd></td></tr>
+    </table>
+    </div>
+    <p><b>On touch screens:</b> drag anywhere on the <b>left half</b> of the screen to walk
+      (a little joystick appears under your finger), and tap the <b>right half</b> to act.</p>
+
+    <h2><span class="ico">🗺️</span>The six adventures</h2>
+
+    <div class="level"><div class="n">1</div><div>
+      <h3>The Meadow</h3>
+      <p>The apples wear <b>number badges</b> and must be gathered <b>in order, 1 to last</b> —
+      the next one in the sequence <b>glows gold</b> (and shines gold on the minimap). Gather them
+      all, then slip home through the <b>gate</b>… or lure the wolf under the <b>rope by the old
+      oak</b> and press <kbd>Space</kbd> for the hero's ending. Watch the wolf's
+      <b>suspicion meter</b> — running, twig-snaps and whistles all feed it.</p>
+    </div></div>
+
+    <div class="level"><div class="n">2</div><div>
+      <h3>Save the Bird</h3>
+      <p>The <b>cat</b> is stalking the little bird. Freeze the cat with thrown apples
+      (<kbd>Space</kbd>) and walk the bird to the <b>tall tree</b> in the far corner. Whistle
+      (<kbd>E</kbd>) to call the bird to you from across the meadow.</p>
+    </div></div>
+
+    <div class="level"><div class="n">3</div><div>
+      <h3>Rescue the Duck</h3>
+      <p>Lead the duck across the wide meadow to the <b>pond</b>. She follows close behind you —
+      stun the wolf with apples and weave through the rocks and cliffs for cover.</p>
+    </div></div>
+
+    <div class="level"><div class="n">4</div><div>
+      <h3>Trap the Wolf</h3>
+      <p>Find the <b>rope</b>, carry it to the old oak (<kbd>Space</kbd> throws it over the
+      branch), then lure the wolf beneath the dangling snare and spring it. Carrying the rope
+      slows you down — drop it with <kbd>Q</kbd> if the wolf closes in.</p>
+    </div></div>
+
+    <div class="level"><div class="n">5</div><div>
+      <h3>Grandfather's Gate</h3>
+      <p>Night has fallen. The fireflies light only a small circle around Peter, and the wolf
+      hunts whichever of you it can see. Keep <b>Grandpa</b> close — he cannot run — and walk him
+      home to the gate. Bushes hide you; apples drive the wolf off.</p>
+    </div></div>
+
+    <div class="level"><div class="n">6</div><div>
+      <h3>The Great Chase</h3>
+      <p><b>Run, Peter, run!</b> One long sprint across a meadow four screens wide, the wolf at
+      your heels, day fading to night as you go — ending at the old oak's waiting snare. After
+      the capture: the Triumphal Procession, and the curtain call.</p>
+    </div></div>
+
+    <p><em>Finish the tale and the title page unlocks <b>chapter select</b> plus
+    <b>Endless Dusk</b> — survive a gathering wolf pack for points. The tale then begins anew, a
+    little wilder each cycle: <b>Storybook</b>, <b>Wild</b> (autumn), <b>Prokofiev</b> (winter).</em></p>
+
+    <h2><span class="ico">🍎</span>Apples on the Meadow — the full rules</h2>
+    <ul>
+      <li><b>Gather in order.</b> Only the apple whose number matches the HUD's
+        <em>next&nbsp;#</em> can be picked up; the wrong apple just reminds you gently.</li>
+      <li><b>Throwing undoes gathering.</b> <kbd>Space</kbd> hurls an apple at the wolf — but
+        apples leave the basket in <b>reverse order</b>: the last one you gathered flies first.</li>
+      <li><b>Everything bounces.</b> A hit <b>stuns the wolf</b> and the apple caroms off his
+        flank along the line of your throw; a miss ricochets off <b>trees, rocks and the
+        meadow's edge</b>, losing speed with each bounce.</li>
+      <li><b>Fetch it back.</b> Wherever the apple rolls to rest, it lies waiting with its number
+        — and rejoins the sequence, so it must be re-gathered <b>in order</b> before the harvest
+        is complete. (No double points for re-picking!)</li>
+      <li><b>The snare minds the count.</b> The oak's rope only arms while you hold <b>every</b>
+        apple — throw one and it lets back down until the basket is full again.</li>
+    </ul>
+
+    <h2><span class="ico">🐺</span>Knowing the wolf</h2>
+    <ul>
+      <li><b>Patrol</b> — it wanders calmly. <b>Hunt</b> — if it <em>sees</em> you in the open or
+        <em>hears</em> you running close by, its eyes glow red and it gives chase.</li>
+      <li>When it gets close it <b>crouches with a flashing ❗</b>, then <b>pounces</b> in a
+        straight line — sidestep the telegraph.</li>
+      <li>You have <b>three hearts</b> per chapter; a bite costs one, with a knock-back and a
+        moment of safety.</li>
+      <li>It <b>fears the hunters</b>: when their patrol wanders near (a far-off horn sounds
+        first), the wolf slinks away, tail tucked — a free moment to breathe or set your trap.</li>
+      <li>It <b>learns</b>: hide in the same bush too long while it hunts and it sniffs the spot
+        out for good.</li>
+    </ul>
+
+    <h2><span class="ico">🤫</span>The stealth toolkit</h2>
+    <ul>
+      <li><b>Tip-toe</b> (<kbd>Shift</kbd>) — silent movement when the wolf is near.</li>
+      <li><b>Trees &amp; rocks</b> — break line of sight; but sprinting close past one can
+        <b>snap a twig</b> every predator turns toward.</li>
+      <li><b>Berry bushes</b> — step inside and you vanish from the wolf's senses.</li>
+      <li><b>The scout bird</b> — on chapter 1 it wheels above the wolf wherever it prowls, so
+        you always know where danger is; whistle to send it <b>diving at the wolf</b>.</li>
+      <li><b>Shakeable trees</b> — out of ammo on the rescue chapters? <kbd>Space</kbd> at a tree
+        shakes an apple or two loose… noisily.</li>
+    </ul>
+
+    <div class="tip">💡 <b>Tip:</b> apples, speed and hearts kept all earn points; every chapter
+      ends with a ★-rating and your best total is saved. Your run — chapter, tier and score — is
+      saved too, so you can close the browser and pick the tale back up.</div>
+    <div class="tip warn">⚠️ <b>Mind the meter:</b> on the Meadow, the wolf's suspicion bar fills
+      with every noise you make. Full bar means the hunt is on — go quiet, break its line of
+      sight, and let it cool.</div>
+
+    <h2><span class="ico">🎵</span>Music &amp; the narrator</h2>
+    <p>
+      Every chapter plays its character's <b>actual Prokofiev leitmotif</b> — Peter's strings,
+      the duck's oboe, the wolf's horns — from a tiny in-code synth (no audio files at all).
+      Between chapters, storybook interludes quote the tale; tick <em>"read the story aloud"</em>
+      on the title page and a narrator speaks them. <kbd>M</kbd> mutes everything.
+    </p>
+
+    <p class="quote">"And if one listened very carefully, one could hear the duck quacking inside
+      the wolf — for the wolf, in his hurry, had swallowed her alive."</p>
+
+    <footer>
+      <a href="index.html">▶ Back to the game</a> · drawn &amp; synthesized entirely in code ·
+      made to recreate a childhood dream 🍎
+    </footer>
+  </div>
+</body>
+</html>

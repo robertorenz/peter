@@ -8,7 +8,14 @@ Everything — the meadow, the trees, Peter, the wolf, and the music cues — is
 
 ## ▶️ Play
 
-Open `index.html` in any modern browser. That's it.
+**Play it online: <https://robertorenz.github.io/peter/>** (hosted on GitHub Pages —
+works on desktop, and on tablets/phones with the touch controls).
+
+Or open `index.html` in any modern browser. That's it.
+
+📖 **[Player's manual](https://robertorenz.github.io/peter/manual.html)** — a storybook
+guide to the controls, the six chapters, the numbered-apple rules and the wolf's
+habits (`manual.html` locally; also linked from the game's title page).
 
 The game **fills the whole browser window**: on big screens everything — the meadow,
 the HUD, the story cards — scales up together (with the canvas re-rendered at full
