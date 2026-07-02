@@ -130,7 +130,7 @@
   <div class="frame">
     <div class="titlebar">
       <h1>Peter &amp; the Wolf</h1>
-      <span class="sub">a five-part meadow adventure</span>
+      <span class="sub">a six-part meadow adventure</span>
     </div>
 
     <div class="stage">
@@ -158,7 +158,7 @@
           <div class="crest">🐺</div>
           <h2 id="mTitle">Peter and the Wolf</h2>
           <p id="mBody">
-            Five little adventures in the great green meadow. First, gather every apple and
+            Six little adventures in the great green meadow. First, gather every apple and
             slip home through the <b>gate</b> — but keep clear of the prowling <b>wolf</b>.
           </p>
           <p class="keys">
@@ -168,6 +168,7 @@
             <kbd>E</kbd> whistle.<br>
             On touch screens: drag the left half to walk, tap the right half to act.
           </p>
+          <p class="keys"><label style="cursor:pointer"><input type="checkbox" id="narrateChk" style="vertical-align:-2px"> 🔊 read the story aloud between chapters</label></p>
           <button class="btn" id="startBtn">Begin the tale</button>
           <div class="foot">Throw apples to freeze the cat &amp; wolf. Hide behind rocks, trees — and inside bushes.</div>
         </div>
@@ -243,8 +244,9 @@
       rope:   ["audio/wolf.wav", "audio/hunters.wav"],
       escort: ["audio/grandfather.wav", "audio/wolf.wav"],
       chase:  ["audio/full.wav"],
+      endless:["audio/wolf.wav", "audio/full.wav"],
     };
-    const SYNTH_THEME = { apples:"peter", bird:"bird", duck:"duck", rope:"wolf", escort:"grandfather", chase:"hunters" };
+    const SYNTH_THEME = { apples:"peter", bird:"bird", duck:"duck", rope:"wolf", escort:"grandfather", chase:"hunters", endless:"wolf" };
     const ALL_TRACKS = ["audio/peter.wav","audio/duck.wav","audio/bird.wav","audio/cat.wav",
                         "audio/grandfather.wav","audio/wolf.wav","audio/hunters.wav","audio/full.wav"];
     let curType = "apples", nowPlaying = "";
@@ -275,6 +277,10 @@
     return {
       pickup(){ tone(660,0.12,"triangle",0.18); tone(990,0.12,"triangle",0.14,0.08); },
       whistle(){ [784,1046,1318,1046].forEach((f,i)=>tone(f,0.1,"sine",0.13,i*0.09)); },
+      horn(){ tone(196,0.55,"sawtooth",0.06); tone(147,0.55,"sawtooth",0.04,0.04);
+              tone(196,0.3,"sawtooth",0.05,0.65); tone(247,0.85,"sawtooth",0.06,1.0); tone(185,0.8,"sawtooth",0.04,1.04); },
+      twig(){ tone(170,0.045,"square",0.13); tone(95,0.06,"square",0.09,0.02); },
+      chirp(){ tone(1250,0.06,"sine",0.09); tone(1600,0.08,"sine",0.07,0.06); },
       motif(type){                                 // one-shot leitmotif for the storybook interludes
         ensure();
         const th = THEMES[SYNTH_THEME[type] || "peter"]; if (!th) return;
@@ -339,10 +345,15 @@
     if (k === " " || k === "enter") {
       e.preventDefault();
       if (state.mode==="parade") { endParade(); return; }
+      if (state.mode==="bow") { endBow(); return; }
       if (k === " " && !keys.space) { keys.space = true; doAction(); }
     }
     if (k === "shift") keys.sneak = true;
     if (k === "e" && state.mode==="play") whistle();
+    if (k === "q" && state.mode==="play" && state.type==="rope" && peter.hasRope){
+      peter.hasRope=false; rope.found=true; rope.x=peter.x; rope.y=peter.y+6; rope.cd=50;
+      flash("Dropped the rope — grab it again when it's safe");
+    }
     if (k === "h"){ photo=!photo;                     // photo mode: hide the HUD for a clean screenshot
       hudEl.style.opacity = photo?"0":""; meterEl.style.opacity = photo?"0":"";
       if (!photo) flash("HUD back — 📷 H hides it again");
@@ -362,6 +373,7 @@
     return { x:(e.clientX-r.left)*W/r.width, y:(e.clientY-r.top)*H/r.height }; };
   cv.addEventListener("pointerdown", (e) => {
     if (state.mode==="parade"){ endParade(); return; }
+    if (state.mode==="bow"){ endBow(); return; }
     if (e.pointerType!=="touch") return;
     const p = canvasPos(e);
     if (p.x < W*0.45) joy = { id:e.pointerId, ox:p.x, oy:p.y, dx:0, dy:0 };
@@ -426,27 +438,42 @@
   function updateParticles(){
     for (const p of particles){ p.x+=p.vx; p.y+=p.vy; p.vy+=p.g; p.vx*=0.97; p.vy*=0.97; p.life--; }
     particles = particles.filter(p => p.life > 0);
-    // drifting golden leaves in the afternoon level
-    if (state.level===1 && state.t%26===0)
+    // drifting leaves: level 2's golden afternoon, or everywhere in the Wild (autumn) tier
+    const autumn = state.season==="Wild", winter = state.season==="Prokofiev";
+    if ((state.level===1 || autumn) && state.t%(autumn?15:26)===0)
       particles.push({ x:cam.x+rand(0,W), y:cam.y-10, vx:rand(-0.4,0.6), vy:rand(0.5,0.9), g:0.001,
         life:240, max:240, c:["#d9a441","#c96a35","#e8d24a"][(Math.random()*3)|0], r:rand(2,3.2) });
-    // sun-lit pollen drifting over the day meadows
-    if (!PALETTES[state.level].night && state.t%30===0)
+    // snowfall across the whole Prokofiev (winter) tier
+    if (winter && state.t%5===0)
+      particles.push({ x:cam.x+rand(0,W), y:cam.y-10, vx:rand(-0.35,0.4), vy:rand(0.55,1.05), g:0,
+        life:320, max:320, c:"rgba(246,250,255,.9)", r:rand(1.2,2.4) });
+    // sun-lit pollen drifting over the day meadows (not in winter)
+    if (!PALETTES[state.level].night && !winter && state.t%30===0)
       particles.push({ x:cam.x+rand(0,W), y:cam.y+rand(0,H), vx:rand(-0.25,0.25), vy:rand(-0.14,0.04), g:-0.0004,
         life:210, max:210, c:"rgba(255,252,222,.75)", r:rand(1,1.9) });
-    // little dust puffs kicked up at running feet
+    // little dust puffs kicked up at running feet + footprints left in the grass
     if (peter){
       const d = Math.hypot(peter.x-lastPX, peter.y-lastPY);
       if (d>1.5 && state.t%7===0)
         particles.push({ x:peter.x-peter.face*5+rand(-3,3), y:peter.y+15, vx:-peter.face*0.3+rand(-0.2,0.2),
           vy:rand(-0.3,-0.08), g:-0.002, life:22, max:22, c:"rgba(233,225,180,.5)", r:rand(1.5,2.6) });
+      if (d>1.2 && state.t%10===0){ stepSide*=-1; tracks.push({ x:peter.x+stepSide*3.2, y:peter.y+16, t:0, r:2.2 }); }
       lastPX=peter.x; lastPY=peter.y;
     }
-    if (wolf && wolf.mode==="hunt" && wolf.stun<=0 && state.t%6===0)
-      particles.push({ x:wolf.x-wolf.face*14+rand(-4,4), y:wolf.y+18, vx:-wolf.face*0.4+rand(-0.2,0.2),
-        vy:rand(-0.25,-0.05), g:-0.002, life:18, max:18, c:"rgba(210,205,170,.45)", r:rand(1.6,2.8) });
+    const wolfTrack = (w2) => {
+      if (!w2 || w2.stun>0) return;
+      if (w2.mode==="hunt" && state.t%6===0)
+        particles.push({ x:w2.x-w2.face*14+rand(-4,4), y:w2.y+18, vx:-w2.face*0.4+rand(-0.2,0.2),
+          vy:rand(-0.25,-0.05), g:-0.002, life:18, max:18, c:"rgba(210,205,170,.45)", r:rand(1.6,2.8) });
+      if (state.t%9===0 && Math.hypot(w2.vx||0,w2.vy||0)>0.4)
+        tracks.push({ x:w2.x+rand(-4,4), y:w2.y+19, t:0, r:2.7 });
+    };
+    wolfTrack(wolf); for (const w2 of wolves) wolfTrack(w2);
+    for (const tr of tracks) tr.t++;
+    tracks = tracks.filter(tr => tr.t < 300);
+    if (tracks.length>150) tracks.splice(0, tracks.length-150);
   }
-  let lastPX=0, lastPY=0;
+  let lastPX=0, lastPY=0, stepSide=1, tracks=[];
   function drawParticles(){
     for (const p of particles){
       ctx.globalAlpha = Math.min(1, p.life/28);
@@ -544,15 +571,21 @@
     }
   }
 
-  // ---- a pair of hunters occasionally patrols through the trees ----
-  let patrol = null;
+  // ---- a pair of hunters occasionally patrols through the trees (announced by a far-off horn) ----
+  let patrol = null, patrolPending = 0;
   function updatePatrol(){
     if (!patrol){
-      if (Math.random() < 1/2600){                    // a rare sight — every ~40s or so
-        const dir = Math.random()<0.5 ? 1 : -1;
-        patrol = { dir, t:0, spd:rand(0.85,1.15),
-          x: dir>0 ? cam.x-70 : cam.x+W+70,
-          y: clamp(cam.y + rand(H*0.18, H*0.82), 70, world.h-70) };
+      if (patrolPending>0){
+        if (--patrolPending===0){
+          const dir = Math.random()<0.5 ? 1 : -1;
+          patrol = { dir, t:0, spd:rand(0.85,1.15),
+            x: dir>0 ? cam.x-70 : cam.x+W+70,
+            y: clamp(cam.y + rand(H*0.18, H*0.82), 70, world.h-70) };
+        }
+      }
+      else if (Math.random() < 1/2600){               // a rare sight — every ~40s or so
+        patrolPending = 260;                          // the horn sounds a few seconds ahead
+        Audio.horn(); flash("🎺 A hunting horn echoes far away…");
       }
       return;
     }
@@ -635,12 +668,16 @@
     if (dove && !dove.waved && peter && Math.abs(dove.x-peter.x)<130 && Math.abs(dove.y-peter.y)<180){
       dove.waved=true; peter.wave=60;                // Peter waves hello as it passes
     }
+    // a wolf running underneath startles it skyward
+    const spooks = (w2)=> w2 && w2.stun<=0 && Math.abs(w2.x-dove.x)<75 && Math.abs(w2.y-dove.y)<65;
+    if (!dove.panic && (spooks(wolf) || wolves.some(spooks))){ dove.panic=true; Audio.chirp(); }
+    if (dove.panic){ dove.y-=2.4; dove.spd=Math.min(dove.spd*1.04,6.2); }
     if (dove.t>90 && (dove.x < cam.x-90 || dove.x > cam.x+W+90)) dove = null;
   }
   function drawDove(){
     if (!dove) return;
     const x=dove.x, y=dove.y + Math.sin(dove.t*0.08)*5;
-    const flap=Math.sin(dove.t*0.38);
+    const flap=Math.sin(dove.t*(dove.panic?0.75:0.38));
     ctx.fillStyle="rgba(20,30,20,.10)"; ctx.beginPath(); ctx.ellipse(x,y+52,10,3,0,0,7); ctx.fill();
     ctx.save(); ctx.translate(x,y); ctx.scale(dove.dir,1);
     // far wing (shaded, beats opposite)
@@ -683,7 +720,7 @@
       brief:"Lead the <b>duck</b> across the wide meadow to the <b>pond</b>. <b>Stun the wolf</b> with apples (<kbd>Space</kbd>) and weave around the rocks, cliffs and trees — your friend follows you." },
     { type:"rope", name:"Trap the Wolf",
       tale:"Round and round the tree walked the wolf, looking up at them with greedy eyes.",
-      brief:"Help <b>Grandpa</b>! Search under the <b>rocks</b> (<kbd>Space</kbd>) for the hidden <b>rope</b>, carry it to the <b>big oak</b>, then lure the wolf there and spring the trap." },
+      brief:"Help <b>Grandpa</b>! Search under the <b>rocks</b> (<kbd>Space</kbd>) for the hidden <b>rope</b>, carry it to the <b>big oak</b>, then lure the wolf there and spring the trap. The rope is heavy — <kbd>Q</kbd> drops it if you need to run or throw." },
     { type:"escort", name:"Grandfather's Gate",
       tale:"Grandfather shook his head: “The meadow is a dangerous place. If a wolf should come out of the forest — then what would you do?”",
       brief:"Night has fallen, and <b>Grandpa</b> must get home. Lead him through the dark to the <b>gate</b> — the fireflies light only a little circle around Peter, and the <b>wolf</b> is out there. <kbd>Space</kbd> throws apples." },
@@ -699,12 +736,24 @@
   const cam = { x:0, y:0 };
   let obstacles = [], apples = [], projectiles = [], decor = [], bushes = [];
   let peter, wolf, cat, duck, bird, grandpa, pond, oak, gate, trap, rope, scout;
+  let wolves = [];                                   // the endless-dusk pack
   const inBush = (e) => bushes.some(b => dist(e.x,e.y,b.x,b.y) < b.r-2);
+  const hidingBush = (e) => bushes.find(b => dist(e.x,e.y,b.x,b.y) < b.r-2) || null;
+  // the wolf learns: linger too long in one bush while it hunts and it sniffs the spot out for good
+  function useBush(b){
+    if (b.known) return;
+    b.heat = (b.heat||0) + 1;
+    const idx = TIERS.indexOf(state.season||"Storybook");
+    if (b.heat > 320 - 100*Math.max(0,idx)){
+      b.known = true;
+      flash("🐺 The wolf has sniffed out this hiding place!"); Audio.growl();
+    }
+  }
 
   const state = { mode:"menu", round:1, level:0, type:"apples", scroll:false,
                   t:0, alert:0, apples:0, need:0, objective:"", phase:"", invuln:0,
                   flashMsg:"", flashT:0, won:false,
-                  hearts:3, score:0, shake:0, gust:0, rain:0 };
+                  hearts:3, score:0, shake:0, gust:0, rain:0, season:"Storybook" };
   const bestScore = () => +(localStorage.getItem("pw_best") || 0);
 
   const STUN = 150;
@@ -726,7 +775,8 @@
     const idx = levelIndexFor(round), L = LEVELS[idx];
     state.level=idx; state.type=L.type; state.alert=0; state.apples=0;
     state.t=0; state.invuln=70; state.won=false; state.phase=""; projectiles=[];
-    obstacles=[]; apples=[]; pond=oak=gate=trap=rope=cat=grandpa=null; duck=bird=scout=null; bushes=[];
+    obstacles=[]; apples=[]; pond=oak=gate=trap=rope=cat=grandpa=null; duck=bird=scout=null; bushes=[]; wolves=[]; tracks=[];
+    state.season = tierFor(round);
     state.hearts=3; state.shake=0; particles=[]; flies=[]; dove=null; patrol=null; captureAnim=null; ropeToss=null;
     weather=null; ripples=[]; state.gust=0; state.rain=0;
     lvlNum.textContent = idx+1; lvlName.textContent = L.name;
@@ -842,7 +892,7 @@
     // the wolf stalks whichever of the pair it can see in the dark (short night sight);
     // Peter tucked in a bush is invisible to it
     let target = dist(wolf.x,wolf.y,peter.x,peter.y) < dist(wolf.x,wolf.y,g.x,g.y) ? peter : g;
-    if (target===peter && inBush(peter)) target = g;
+    if (target===peter){ const eb=hidingBush(peter); if (eb && !eb.known){ useBush(eb); target=g; } }
     if (!wolfSlinks()) stalk(wolf, target, 215, 1.12);
     if (state.invuln<=0 && dist(wolf.x,wolf.y,peter.x,peter.y) < peter.r+wolf.r-3 && catchPeter()) return;
     if (dist(wolf.x,wolf.y,g.x,g.y) < g.r+wolf.r-4) return lose("grandpa");
@@ -876,6 +926,61 @@
     setMeter(clamp(100-(dw-40)/3,0,100),
       wolf.slink>0?"🏹 Hunters near — the wolf slinks away!":wolf.stun>0?"The wolf is frozen! ❄":dw<170?"⚠ The wolf is at your heels!":"Run for the old oak!");
     state.objective = "Run! Lead the wolf under the old oak →";
+  }
+
+  // ---- Endless Dusk: survive the gathering pack (unlocked from the chapter menu) ----
+  function startEndless(){
+    state.round=1; state.score=0; state.mode="play"; state.type="endless"; state.level=2;
+    state.t=0; state.alert=0; state.apples=4; state.invuln=70; state.won=false; state.phase="";
+    projectiles=[]; obstacles=[]; apples=[]; pond=oak=gate=trap=rope=cat=grandpa=null; duck=bird=scout=null;
+    bushes=[]; wolves=[]; tracks=[]; state.season="Storybook";
+    state.hearts=3; state.shake=0; particles=[]; flies=[]; dove=null; patrol=null; captureAnim=null; ropeToss=null;
+    weather=null; ripples=[]; state.gust=0; state.rain=0;
+    world={w:1500,h:1000};
+    lvlNum.textContent="∞"; lvlName.textContent="Endless Dusk";
+    const keep=[{x:world.w/2,y:world.h/2,d:210}];
+    addObstacles(14, ["tree","rock"], keep);
+    for (let i=0;i<4;i++){
+      const p=placeAway(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+70})).concat(bushes.map(b=>({x:b.x,y:b.y,d:260}))),150,110);
+      bushes.push({x:p.x,y:p.y,r:30});
+    }
+    for (let i=0;i<8;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+40}))),110,80); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
+    peter=mkPeter(world.w/2,world.h/2); wolf=null;
+    wolves=[mkWolf(150,150,1.45)];
+    state.scroll=true;
+    scatterDecor(Math.round(world.w*world.h/16000)); buildAmbient();
+    const nf=PALETTES[2].flies||0;
+    for (let i=0;i<nf;i++) flies.push({ x:rand(40,world.w-40), y:rand(40,world.h-40), ph:rand(0,7) });
+    centerCamera(); updateHearts(); hideModal();
+    Audio.setLevel("endless"); Audio.musicStart();
+  }
+
+  function updateEndless(){
+    // another wolf slips from the trees every so often
+    if (state.t>0 && state.t%2400===0 && wolves.length<6){
+      const side=(Math.random()*3)|0;
+      const sx = side===0?25 : side===1?world.w-25 : rand(60,world.w-60);
+      const sy = side===2?25 : rand(60,world.h-60);
+      wolves.push(mkWolf(sx,sy,1.42+wolves.length*0.06));
+      flash(`🐺 Another wolf slips out of the trees… (${wolves.length})`); Audio.growl();
+    }
+    if (state.t%60===0) state.score+=5;               // every second survived counts
+    let nearest=1e9;
+    const b = hidingBush(peter);
+    for (const w2 of wolves){
+      if (w2.slink>0) w2.slink--;
+      const th=hunterThreat(w2);
+      if (th && w2.stun<=0){ w2.slink=14; w2.crouch=0; w2.mode="patrol"; moveToward(w2, w2.x*2-th.x, w2.y*2-th.y, w2.speed*1.05); }
+      else if (b && !b.known && w2.mode==="hunt"){ useBush(b);
+        if (w2.tx===undefined||dist(w2.tx,w2.ty,w2.x,w2.y)<24||state.t%160===0){ w2.tx=rand(60,world.w-60); w2.ty=rand(60,world.h-60); }
+        w2.mode="patrol"; moveToward(w2,w2.tx,w2.ty,w2.speed*0.7);
+      }
+      else stalk(w2, peter, 250, 1.06);
+      const d=dist(w2.x,w2.y,peter.x,peter.y); nearest=Math.min(nearest,d);
+      if (state.invuln<=0 && d<peter.r+w2.r-3 && catchPeter(w2)) return;
+    }
+    setMeter(clamp(100-(nearest-30)/2.5,0,100), nearest<170?"⚠ Wolves at your heels!":"Survive the dusk — every second is worth points");
+    state.objective = `Endless Dusk · ${wolves.length} 🐺 in the meadow · survive!`;
   }
 
   function addObstacles(n, kinds, keep){
@@ -938,10 +1043,17 @@
   function aimTarget(){
     if (state.type==="bird") return cat;
     if (state.type==="duck" || state.type==="rope" || state.type==="escort" || state.type==="chase") return wolf;
+    if (state.type==="endless") return nearestWolf(peter.x, peter.y);
     return null;
+  }
+  function nearestWolf(x,y){
+    let best=null, bd=1e9;
+    for (const w2 of wolves){ const d=dist(x,y,w2.x,w2.y); if (d<bd){ bd=d; best=w2; } }
+    return best;
   }
   function throwApple(){
     if (state.apples <= 0) { flash("Out of apples — find more 🍎"); return; }
+    if (peter.hasRope){ flash("Carrying the rope — drop it first (Q)"); return; }
     const e = aimTarget();
     let ang = peter.face>=0 ? 0 : Math.PI;
     if (e && !e.gone) ang = Math.atan2(e.y-peter.y, e.x-peter.x);
@@ -952,7 +1064,7 @@
   }
 
   // Peter's whistle: calls a friend to him from afar — but the wolf hears it too
-  let whistleCd = 0;
+  let whistleCd = 0, twigCd = 0;
   function whistle(){
     if (whistleCd>0 || !peter) return;
     whistleCd = 260;
@@ -963,11 +1075,18 @@
       bird.following=true; flash("🐦 The bird heard you and flutters over!"); }
     if (state.type==="duck" && duck && !duck.safe && !duck.gone && !duck.following && dist(duck.x,duck.y,peter.x,peter.y)<430){
       duck.following=true; flash("🦆 The duck heard you and waddles over!"); }
+    // on level 1 the whistle sends the scout bird to dive-bomb the wolf, pinning it a moment
+    if (state.type==="apples" && scout && wolf && wolf.stun<=0 && (scout.cd||0)<=0){
+      scout.cd=620; scout.dive=110; wolf.distract=110; wolf.crouch=0;
+      flash("🐦 The bird dives at the wolf!"); Audio.chirp();
+    }
     // ...but sound carries in the meadow
     if (wolf && wolf.stun<=0 && dist(wolf.x,wolf.y,peter.x,peter.y)<540){
-      if (state.type==="apples") state.alert=Math.min(100,state.alert+22);
+      if (state.type==="apples") state.alert=Math.min(100,state.alert+10);
       wolf.tx=peter.x+rand(-40,40); wolf.ty=peter.y+rand(-40,40);
     }
+    for (const w2 of wolves) if (w2.stun<=0 && w2.mode!=="hunt" && dist(w2.x,w2.y,peter.x,peter.y)<540){
+      w2.tx=peter.x+rand(-40,40); w2.ty=peter.y+rand(-40,40); }
     if (cat && cat.stun<=0 && cat.mode!=="hunt" && dist(cat.x,cat.y,peter.x,peter.y)<540){
       cat.tx=peter.x+rand(-40,40); cat.ty=peter.y+rand(-40,40); }
   }
@@ -1057,7 +1176,72 @@
     if (!paradeAnim) return;
     const f = paradeAnim.done; paradeAnim = null;
     hudEl.style.opacity=""; meterEl.style.opacity="";
+    if (state.type==="chase") startBow(f);   // the finale earns a curtain call
+    else f();
+  }
+
+  // ================= CURTAIN CALL =================
+  // After the finale's procession the whole cast lines up for a bow.
+  let bowAnim = null;
+  function startBow(done){
+    state.mode="bow"; bowAnim={ t:0, done };
+    hudEl.style.opacity="0"; meterEl.style.opacity="0";
+  }
+  function endBow(){
+    if (!bowAnim) return;
+    const f=bowAnim.done; bowAnim=null;
+    hudEl.style.opacity=""; meterEl.style.opacity="";
     f();
+  }
+  function updateBow(){ if (bowAnim && ++bowAnim.t>1500) endBow(); }
+  function drawBow(){
+    const t=bowAnim.t;
+    // stage: deep velvet, warm spotlight pool
+    const g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,"#241a2e"); g.addColorStop(1,"#120e1c");
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    const sp=ctx.createRadialGradient(W/2,H*0.62,40,W/2,H*0.62,W*0.42);
+    sp.addColorStop(0,"rgba(255,228,160,.22)"); sp.addColorStop(1,"rgba(255,228,160,0)");
+    ctx.fillStyle=sp; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="rgba(255,236,190,.08)"; ctx.beginPath(); ctx.ellipse(W/2,H*0.72,W*0.36,26,0,0,7); ctx.fill();
+    // curtains
+    for (const side of [0,1]){
+      const cx = side? W : 0, dir = side? -1 : 1;
+      const cg=ctx.createLinearGradient(cx,0,cx+dir*130,0);
+      cg.addColorStop(0,"#7e2430"); cg.addColorStop(1,"#4d141d");
+      ctx.fillStyle=cg;
+      ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx+dir*120,0);
+      for (let yy=0; yy<=H; yy+=60) ctx.lineTo(cx+dir*(96+Math.sin(yy*0.05+t*0.01)*10), yy);
+      ctx.lineTo(cx,H); ctx.closePath(); ctx.fill();
+    }
+    // the cast takes its bow (gentle bobbing, Peter waving)
+    const y0=H*0.68, bob=(i)=>Math.sin(t*0.05+i)*2;
+    const saveB=bird, saveD=duck, saveT=state.type;
+    drawPeter({ x:W/2, y:y0-4+bob(0), r:13, face:1, step:0, hasRope:false, wave:1 });
+    bird = { x:W/2-60, y:y0+2+bob(1), face:1, hop:0, following:false, safe:true, gone:false, bath:0 };
+    drawBird(); bird=saveB;
+    duck = { x:W/2+64, y:y0+bob(2), face:-1, dive:0, preen:0, safe:true, gone:false, vx:0, vy:0, mode:"land" };
+    drawDuck(); duck=saveD; state.type=saveT;
+    drawCat({ x:W/2-120, y:y0+bob(3), face:1, step:0, stun:0, spot:0, wash:(Math.floor(t/240)%2)?40:0 });
+    drawGrandpa({ x:W/2+130, y:y0-6+bob(4), face:-1, step:t*0.02 });
+    drawHunter(W/2-200, y0-4+bob(5), t*0.05, "#5d6247", "#4a3524", 1, false);
+    drawHunter(W/2+205, y0-4+bob(6), t*0.05+1.3, "#3f6b46", "#6e4a2c", -1, false);
+    // the wolf, leashed but taking its bow too
+    ctx.save(); ctx.translate(W/2+265, y0-2+bob(7)); ctx.scale(-1,1);
+    drawWolfBody({ step:0, stun:0, mode:"patrol", face:1, slink:0, crouch:0, pounce:0 });
+    ctx.restore();
+    ctx.strokeStyle="#caa15a"; ctx.lineWidth=2.5; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(W/2+213, y0-30+bob(6)); ctx.quadraticCurveTo(W/2+238,y0-6,W/2+252,y0-12+bob(7)); ctx.stroke();
+    // storybook lines
+    ctx.textAlign="center";
+    ctx.fillStyle="#ffe8b0"; ctx.font="bold 30px Georgia, serif";
+    ctx.fillText("The End", W/2, H*0.2);
+    ctx.fillStyle="#d8cfd8"; ctx.font="italic 16px Georgia, serif";
+    ctx.fillText("…and if you listen very carefully, you can hear the duck", W/2, H*0.27);
+    ctx.fillText("quacking inside the wolf — for in his hurry, he had swallowed her alive.", W/2, H*0.305);
+    ctx.globalAlpha=0.55+0.35*Math.sin(t*0.06);
+    ctx.font="13px Segoe UI, sans-serif"; ctx.fillStyle="#b9aec4";
+    ctx.fillText("press Space to continue", W/2, H*0.9);
+    ctx.globalAlpha=1;
   }
   function updateParade(){
     const P = paradeAnim; if (!P) return;
@@ -1091,7 +1275,7 @@
 
     // Peter
     const sneaking = keys.sneak;
-    const spd = sneaking ? 1.8 : 3.15;
+    const spd = (sneaking ? 1.8 : 3.15) * (peter.hasRope ? 0.85 : 1);   // the coil of rope is heavy
     let dx=(keys.right?1:0)-(keys.left?1:0), dy=(keys.down?1:0)-(keys.up?1:0);
     const moving=!!(dx||dy);
     if (moving){ const m=Math.hypot(dx,dy)||1; dx/=m; dy/=m;
@@ -1103,10 +1287,28 @@
     resolve(peter);
     updateCamera();
 
+    // running close past a tree or rock can snap a twig — and the meadow listens
+    if (twigCd>0) twigCd--;
+    else if (moving && !sneaking){
+      for (const o of obstacles){
+        if (dist(peter.x,peter.y,o.x,o.y) < o.r+26){
+          if (Math.random()<0.012){
+            twigCd=170; Audio.twig();
+            ripples.push({ x:peter.x, y:peter.y+10, t:0 });
+            flash("crack! — a twig snaps underfoot");
+            if (wolf && wolf.stun<=0){ wolf.tx=peter.x; wolf.ty=peter.y; if (state.type==="apples") state.alert=Math.min(100,state.alert+9); }
+            for (const w2 of wolves) if (w2.stun<=0 && w2.mode!=="hunt"){ w2.tx=peter.x; w2.ty=peter.y; }
+            if (cat && cat.stun<=0 && cat.mode!=="hunt"){ cat.tx=peter.x; cat.ty=peter.y; }
+          }
+          break;
+        }
+      }
+    }
+
     // projectiles
     for (const p of projectiles){
       p.x+=p.vx; p.y+=p.vy; p.vy+=0.05; p.spin+=0.35; p.life--;
-      const e=aimTarget();
+      const e = state.type==="endless" ? nearestWolf(p.x,p.y) : aimTarget();
       if (e && !e.gone && Math.hypot(p.x-e.x,p.y-e.y) < e.r+9){ e.stun=STUN; e.crouch=0; e.pounce=0; p.dead=true; Audio.thud();
         burst(p.x, p.y, 14, ["#c43d2e","#e25a44","#f7e58a"], 3, 36, 0.08); state.shake=Math.max(state.shake,3);
         flash("🍎 splat! frozen"); }
@@ -1121,7 +1323,7 @@
         flash(a.ammo ? "🍎 picked up (ammo)" : "🍎 +1"); }
     }
     // gentle ammo respawn for throw levels
-    if ((state.type==="bird"||state.type==="duck"||state.type==="rope"||state.type==="escort"||state.type==="chase") && state.t%280===0){
+    if ((state.type==="bird"||state.type==="duck"||state.type==="rope"||state.type==="escort"||state.type==="chase"||state.type==="endless") && state.t%280===0){
       const left=apples.filter(a=>!a.got).length;
       if (left<3){ const p=placeAway(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+40})),100,70); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
     }
@@ -1131,7 +1333,8 @@
     else if (state.type==="duck") updateDuck();
     else if (state.type==="rope") updateRope();
     else if (state.type==="escort") updateEscort();
-    else updateChase();
+    else if (state.type==="chase") updateChase();
+    else updateEndless();
 
     updateHUD();
   }
@@ -1169,8 +1372,12 @@
     if (ent.stun>0){ ent.mode="patrol"; chase(ent, prey.x, prey.y, factor); return; }   // chase ticks the stun down
     const d = dist(ent.x,ent.y,prey.x,prey.y);
     if (ent.mode!=="hunt"){
-      if (d < seeR){ ent.mode="hunt"; ent.spot = ent.stalks?100:34; Audio.growl(); }
+      if (d < seeR){ ent.mode="hunt"; ent.spot = ent.stalks?100:34; ent.wash=0; Audio.growl(); }
       else {
+        if (ent.stalks){                              // a prowling cat pauses to wash now and then
+          if (ent.wash>0){ ent.wash--; ent.vx*=0.8; ent.vy*=0.8; return; }
+          if (Math.random()<1/430){ ent.wash=100; return; }
+        }
         if (ent.tx===undefined || dist(ent.tx,ent.ty,ent.x,ent.y)<24 || state.t%170===0){
           ent.tx=rand(60,world.w-60); ent.ty=rand(60,world.h-60);
         }
@@ -1197,14 +1404,18 @@
       flash("All apples! Snare the wolf under the oak (Space) — or flee home 🏡"); }
 
     const d=dist(peter.x,peter.y,wolf.x,wolf.y);
-    const hidden=nearCover(peter.x,peter.y) || inBush(peter);
+    const hbush=hidingBush(peter);
+    const hidden=nearCover(peter.x,peter.y) || (hbush && !hbush.known);
+    if (hbush && !hbush.known && d<300 && (wolf.mode==="hunt" || state.alert>25)) useBush(hbush);
     const noise = moving ? (sneaking?0.45:1.2) : 0;
     const canSee = !hidden && d<210, canHear = d<150 && noise>0;
     if (canSee||canHear){ state.alert=Math.min(100,state.alert+(canSee?2.4:1.4)+noise*0.6); wolf.mode="hunt"; }
     else { state.alert=Math.max(0,state.alert-0.9); if (state.alert<30) wolf.mode="patrol"; }
 
     // a fully-alert wolf hunts faster, but only an actual pounce can catch Peter
-    if (wolfSlinks()){ state.alert=Math.max(0,state.alert-1.4); }
+    if (scout && scout.cd>0) scout.cd--;
+    if (wolf.distract>0){ wolf.distract--; wolf.vx*=0.7; wolf.vy*=0.7; }   // busy snapping at the diving bird
+    else if (wolfSlinks()){ state.alert=Math.max(0,state.alert-1.4); }
     else if (wolf.mode==="hunt"){ chase(wolf, peter.x, peter.y, 1.5 + (state.alert>=100?0.25:0), true); }
     else { if (dist(wolf.tx,wolf.ty,wolf.x,wolf.y)<24 || state.t%140===0){ wolf.tx=rand(60,world.w-60); wolf.ty=rand(60,world.h-60); }
            if (wolf.growlCd>0) wolf.growlCd--; moveToward(wolf, wolf.tx, wolf.ty, wolf.speed*0.8); }
@@ -1294,13 +1505,16 @@
   }
 
   function updateRope(){
-    // pick up a revealed rope
-    if (rope.found && !peter.hasRope && dist(peter.x,peter.y,rope.x,rope.y) < peter.r+16){ peter.hasRope=true; flash("Got the rope! 🪢 To the oak!"); Audio.pickup(); }
+    // pick up a revealed rope (after a beat, so dropping it doesn't bounce straight back)
+    if (rope.cd>0) rope.cd--;
+    if (rope.found && !peter.hasRope && !(rope.cd>0) && dist(peter.x,peter.y,rope.x,rope.y) < peter.r+16){ peter.hasRope=true; flash("Got the rope! 🪢 To the oak! (Q drops it)"); Audio.pickup(); }
     updateGrandpa();
     // the wolf hunts Peter the whole time — unless the hunters wander by,
     // or Peter has slipped into a bush and off its senses
     if (!wolfSlinks()){
-      if (inBush(peter) && dist(wolf.x,wolf.y,peter.x,peter.y)>110){
+      const rb = hidingBush(peter);
+      if (rb && !rb.known && dist(wolf.x,wolf.y,peter.x,peter.y)>110){
+        useBush(rb);
         if (dist(wolf.tx,wolf.ty,wolf.x,wolf.y)<24 || state.t%150===0){ wolf.tx=rand(60,world.w-60); wolf.ty=rand(60,world.h-60); }
         moveToward(wolf, wolf.tx, wolf.ty, wolf.speed*0.75);
       } else chase(wolf, peter.x, peter.y, 1.35, true);
@@ -1321,13 +1535,14 @@
     heartPill.innerHTML = "❤".repeat(Math.max(0,state.hearts)) + "🖤".repeat(Math.max(0,3-state.hearts));
   }
   // wolf touched Peter: lose a heart, knock the wolf back dazed; returns true only on game over
-  function catchPeter(){
+  function catchPeter(by){
+    const w = by || wolf;
     state.hearts--; updateHearts();
     if (state.hearts<=0){ lose("caught"); return true; }
     Audio.hurt(); state.shake=Math.max(state.shake,9); state.invuln=140;
     burst(peter.x, peter.y-6, 16, ["#e35d6a","#ffb3ba","#fff"], 3, 40, 0.05);
-    const a=Math.atan2(wolf.y-peter.y, wolf.x-peter.x);
-    wolf.x+=Math.cos(a)*95; wolf.y+=Math.sin(a)*95; wolf.stun=70; wolf.crouch=0; wolf.pounce=0; resolve(wolf);
+    const a=Math.atan2(w.y-peter.y, w.x-peter.x);
+    w.x+=Math.cos(a)*95; w.y+=Math.sin(a)*95; w.stun=70; w.crouch=0; w.pounce=0; resolve(w);
     flash(state.hearts===1 ? "💔 One heart left — careful!" : "The wolf nipped Peter! ♥ lost");
     return false;
   }
@@ -1355,6 +1570,7 @@
 
   function draw(){
     if (state.mode==="parade" && paradeAnim){ drawParade(); return; }
+    if (state.mode==="bow" && bowAnim){ drawBow(); return; }
     drawGround();
     const shx = state.shake>0.3 ? rand(-state.shake,state.shake) : 0;
     const shy = state.shake>0.3 ? rand(-state.shake,state.shake) : 0;
@@ -1385,6 +1601,7 @@
     if (cat)     ents.push({y:cat.y, d:()=>drawCat(cat)});
     if (peter)   ents.push({y:peter.y, d:()=>drawPeter(peter)});
     if (wolf && !captureAnim) ents.push({y:wolf.y, d:()=>drawWolf(wolf)});
+    for (const w2 of wolves) ents.push({y:w2.y, d:()=>drawWolf(w2)});
     if (patrol){
       const P=patrol, st=P.t*0.11;
       ents.push({y:P.y, d:()=>drawHunter(P.x, P.y, st, "#5d6247", "#4a3524", P.dir, false)});
@@ -1439,6 +1656,9 @@
       if (z.B.tint && z.f>0.01){ ctx.save(); ctx.globalAlpha=z.f; ctx.fillStyle=z.B.tint; ctx.fillRect(0,0,W,H); ctx.restore(); }
     }
     else if (pal.tint){ ctx.fillStyle = pal.tint; ctx.fillRect(0,0,W,H); }
+    // seasonal cast: autumn gold in the Wild tier, pale frost in Prokofiev
+    if (state.season==="Wild"){ ctx.fillStyle="rgba(214,150,50,.07)"; ctx.fillRect(0,0,W,H); }
+    else if (state.season==="Prokofiev"){ ctx.fillStyle="rgba(226,238,250,.12)"; ctx.fillRect(0,0,W,H); }
     // the light slowly drifts as the level wears on: day turns golden, dusk deepens
     if (!pal.night){
       const drift = Math.min(1, state.t/14400);
@@ -1483,6 +1703,15 @@
       g.addColorStop(0,pal.top); g.addColorStop(1,pal.bot);
       ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
     }
+    // footprints pressed into the grass (or snow), fading as the meadow springs back
+    for (const tr of tracks){
+      const sx=tr.x-cam.x, sy=tr.y-cam.y;
+      if (sx<-6||sx>W+6||sy<-6||sy>H+6) continue;
+      ctx.globalAlpha=(1-tr.t/300)*(state.season==="Prokofiev"?0.30:0.15);
+      ctx.fillStyle=state.season==="Prokofiev"?"#5f7488":"#28421f";
+      ctx.beginPath(); ctx.ellipse(sx,sy,tr.r,tr.r*0.62,0,0,7); ctx.fill();
+    }
+    ctx.globalAlpha=1;
     // warm sun-lit patches in the grass (world coords -> screen)
     for (const pa of patches){
       const px=pa.x-cam.x, py=pa.y-cam.y;
@@ -1542,6 +1771,7 @@
     dot(duck,"#f4f1e8",2.4); dot(bird,"#f4f1e8",2.2);
     dot(grandpa,"#bfe3c0",2.8);
     dot(cat,"#ff9d4a",2.8); dot(wolf,"#ff5a3c",3);
+    for (const w2 of wolves) dot(w2,"#ff5a3c",3);
     dot(peter,"#ffd45e",3.2);
     // camera view
     ctx.strokeStyle="rgba(255,255,255,.35)"; ctx.strokeRect(mx+cam.x*sx, my+cam.y*sy, W*sx, H*sy);
@@ -1776,6 +2006,13 @@
       ctx.fillStyle="rgba(255,255,255,.8)"; ctx.beginPath(); ctx.arc(15.6,-11.3,0.7,0,7); ctx.fill();
     }
 
+    // washing: a cream paw licks up past the cheek
+    if (!stunned && (c.wash||0)>0){
+      const lk=Math.abs(Math.sin(state.t*0.22))*3.5;
+      ctx.strokeStyle=top; ctx.lineWidth=4.5; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(9,5); ctx.lineTo(13.5,-3-lk); ctx.stroke();
+      ctx.fillStyle="#f6e7d4"; ctx.beginPath(); ctx.arc(14,-4.2-lk,2.7,0,7); ctx.fill();
+    }
     // pink nose, little mouth, whiskers
     ctx.fillStyle="#e8909c"; ctx.beginPath(); ctx.moveTo(20.5,-7.6); ctx.lineTo(22.6,-6.6); ctx.lineTo(20.6,-5.4); ctx.closePath(); ctx.fill();
     ctx.strokeStyle="rgba(90,60,40,.6)"; ctx.lineWidth=1.1; ctx.lineCap="round";
@@ -1819,9 +2056,12 @@
   // the scout bird wheels above the wolf, chirping — you always know where danger is
   function drawScout(){
     if (!scout || !wolf || captureAnim) return;
+    if (scout.dive>0) scout.dive--;
     const a = state.t*0.045 + scout.ph;
-    const x = wolf.x + Math.cos(a)*32, y = wolf.y - 50 + Math.sin(a*2)*7;
-    const fl = Math.sin(state.t*0.5);
+    const diving = scout.dive>0;
+    const x = diving ? wolf.x + Math.sin(state.t*0.32)*18 : wolf.x + Math.cos(a)*32;
+    const y = diving ? wolf.y - 22 + Math.sin(state.t*0.4)*5 : wolf.y - 50 + Math.sin(a*2)*7;
+    const fl = Math.sin(state.t*(diving?0.9:0.5));
     ctx.save(); ctx.translate(x,y); ctx.scale(Math.sin(a)>=0?-1:1,1);
     ctx.fillStyle="rgba(20,30,20,.10)";                       // faint shadow cast far below
     ctx.beginPath(); ctx.ellipse(0,52,5,1.6,0,0,7); ctx.fill();
@@ -1884,6 +2124,10 @@
     ctx.fillStyle="rgba(220,255,170,.14)"; ctx.beginPath(); ctx.arc(b.x-6+sway,b.y-14,b.r*0.3,0,7); ctx.fill();
     ctx.fillStyle="#b3475c";
     for (const [bx,by] of [[-12,-2],[6,-10],[14,5]]){ ctx.beginPath(); ctx.arc(b.x+bx+sway*0.4,b.y+by,2.2,0,7); ctx.fill(); }
+    if (b.known){                                          // the wolf has marked this one
+      ctx.fillStyle="rgba(35,30,25,.5)";
+      for (const [px2,py2] of [[-16,16],[-9,20],[-2,17]]){ ctx.beginPath(); ctx.ellipse(b.x+px2,b.y+py2,2.4,1.6,0,0,7); ctx.fill(); }
+    }
   }
 
   function drawObstacle(o){
@@ -1891,19 +2135,31 @@
     else if (o.kind==="rock") drawRock(o);
     else drawCliff(o);
   }
+  // per-tier canopy colours: storybook green, autumn gold, winter pine
+  const CANOPY = {
+    Storybook:{ tree:["#3f7a38","#4f8f44","#62a657"], oak:["#356b30","#46823c","#5a9c4e"], crown:"rgba(220,255,170,.20)" },
+    Wild:     { tree:["#8a5a26","#b0702c","#c9913a"], oak:["#7d4d20","#a06327","#bb7c31"], crown:"rgba(255,225,150,.22)" },
+    Prokofiev:{ tree:["#2c5246","#3a6a58","#4a806a"], oak:["#28493f","#355e50","#437263"], crown:"rgba(210,235,255,.18)" },
+  };
+  const canopy = () => CANOPY[state.season] || CANOPY.Storybook;
   function drawTree(t){
     if (t.shakeT>0) t.shakeT--;
     const sway=Math.sin(state.t*0.02 + (t.x+t.y))*3 + state.gust*8 + (t.shakeT>0 ? Math.sin(state.t*0.9)*t.shakeT*0.3 : 0);
     ctx.fillStyle="rgba(20,30,20,.18)"; ctx.beginPath(); ctx.ellipse(t.x,t.y+22,30,9,0,0,7); ctx.fill();
     ctx.fillStyle="#7a5230"; ctx.fillRect(t.x-6,t.y-6,12,30);
     ctx.fillStyle="rgba(40,24,10,.35)"; ctx.fillRect(t.x+2,t.y-6,4,30);   // trunk shading
-    const greens=["#3f7a38","#4f8f44","#62a657"];
+    const greens=canopy().tree;
     greens.forEach((c,i)=>{ ctx.fillStyle=c; ctx.beginPath();
       ctx.arc(t.x-15+sway,t.y-16-i*4,22-i*3,0,7); ctx.arc(t.x+15+sway,t.y-16-i*4,22-i*3,0,7);
       ctx.arc(t.x+sway,t.y-30-i*4,26-i*3,0,7); ctx.fill(); });
-    // sunlit crown
-    ctx.fillStyle="rgba(220,255,170,.20)"; ctx.beginPath();
-    ctx.arc(t.x-9+sway,t.y-42,11,0,7); ctx.arc(t.x+7+sway,t.y-37,7,0,7); ctx.fill();
+    // sunlit crown — or a cap of snow in winter
+    if (state.season==="Prokofiev"){
+      ctx.fillStyle="rgba(242,248,255,.85)"; ctx.beginPath();
+      ctx.arc(t.x+sway,t.y-40,15,Math.PI,0); ctx.arc(t.x-14+sway,t.y-27,9,Math.PI,0); ctx.arc(t.x+15+sway,t.y-26,8,Math.PI,0); ctx.fill();
+    } else {
+      ctx.fillStyle=canopy().crown; ctx.beginPath();
+      ctx.arc(t.x-9+sway,t.y-42,11,0,7); ctx.arc(t.x+7+sway,t.y-37,7,0,7); ctx.fill();
+    }
   }
   function drawRock(o){
     ctx.fillStyle="rgba(20,30,20,.2)"; ctx.beginPath(); ctx.ellipse(o.x,o.y+o.r*0.7,o.r*1.05,o.r*0.4,0,0,7); ctx.fill();
@@ -1987,10 +2243,14 @@
     ctx.fillStyle="rgba(20,30,20,.2)"; ctx.beginPath(); ctx.ellipse(o.x,o.y+o.r*0.8,o.r*1.2,o.r*0.3,0,0,7); ctx.fill();
     ctx.fillStyle="#6e4824"; ctx.fillRect(o.x-12,o.y-10,24,o.r+10);
     ctx.strokeStyle="#6e4824"; ctx.lineWidth=9; ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(o.x,o.y-4); ctx.lineTo(o.x+38,o.y-20); ctx.stroke();
-    const greens=["#356b30","#46823c","#5a9c4e"];
+    const greens=canopy().oak;
     greens.forEach((c,i)=>{ ctx.fillStyle=c; ctx.beginPath();
       ctx.arc(o.x-30+sway,o.y-28-i*6,40-i*5,0,7); ctx.arc(o.x+28+sway,o.y-28-i*6,40-i*5,0,7);
       ctx.arc(o.x+sway,o.y-54-i*6,46-i*5,0,7); ctx.fill(); });
+    if (state.season==="Prokofiev"){
+      ctx.fillStyle="rgba(242,248,255,.85)"; ctx.beginPath();
+      ctx.arc(o.x+sway,o.y-66,24,Math.PI,0); ctx.arc(o.x-28+sway,o.y-42,15,Math.PI,0); ctx.arc(o.x+27+sway,o.y-41,14,Math.PI,0); ctx.fill();
+    }
   }
 
   function drawTrapCoil(tr){          // the un-armed coil waiting by the oak (level 1)
@@ -2197,16 +2457,48 @@
   }
 
   // ================= FLOW =================
-  function loop(){ if (state.mode==="play") update(); else if (state.mode==="capture") updateCapture(); else if (state.mode==="parade") updateParade(); draw(); requestAnimationFrame(loop); }
+  // ambient life keeps breathing behind the menu and story pages (never during pause — that would cost score time)
+  function menuTick(){
+    state.t++;
+    if (duck && duck.mode==="swim" && pond){ duck.ang+=0.012; duck.x=pond.x+Math.cos(duck.ang)*pond.rx*0.55;
+      duck.y=pond.y+Math.sin(duck.ang)*pond.ry*0.5; duck.face=Math.cos(duck.ang)>=0?1:-1; }
+    if (state.mode==="menu" && wolf && wolf.stun<=0){
+      if (dist(wolf.tx,wolf.ty,wolf.x,wolf.y)<24 || state.t%180===0){ wolf.tx=rand(60,world.w-60); wolf.ty=rand(60,world.h-60); }
+      moveToward(wolf, wolf.tx, wolf.ty, wolf.speed*0.55);
+    }
+    updateParticles(); updateDove(); updateDragonflies(); updatePatrol(); updateWeather();
+    if (peter && peter.wave>0) peter.wave--;
+  }
+  function loop(){
+    if (state.mode==="play") update();
+    else if (state.mode==="capture") updateCapture();
+    else if (state.mode==="parade") updateParade();
+    else if (state.mode==="bow") updateBow();
+    else if (state.mode==="menu"||state.mode==="won"||state.mode==="lost") menuTick();
+    draw(); requestAnimationFrame(loop);
+  }
 
   function showModal(title, body, btn){ mTitle.textContent=title; mBody.innerHTML=body; startBtn.textContent=btn; overlay.classList.add("show"); }
   function hideModal(){ overlay.classList.remove("show"); }
   function setCrest(e){ const c=document.querySelector(".modal .crest"); if (c) c.textContent=e; }
 
   function startRound(){
+    try{ localStorage.setItem("pw_run", JSON.stringify({ round:state.round, score:state.score })); }catch(e){}
     makeLevel(state.round);
     hideModal(); state.mode="play";
     Audio.setLevel(state.type); Audio.musicStart();
+  }
+
+  // ---- narrator: reads the storybook lines aloud between chapters ----
+  let narrate = false;
+  try{ narrate = localStorage.getItem("pw_narrate")==="1"; }catch(e){}
+  function speak(text){
+    if (!narrate || !window.speechSynthesis) return;
+    try{
+      const u = new SpeechSynthesisUtterance(text.replace(/<[^>]*>/g,"").replace(/[📖🎺🐺🐦🦆🪢🏮🏡🎉♥★☆]/g,""));
+      u.rate=0.95; u.pitch=1.05;
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    }catch(e){}
   }
 
   function advance(crest, title, story, sound){
@@ -2220,11 +2512,15 @@
     const scoreLine = `<br><br><span style="color:#b9822c;font-weight:700;font-size:20px;letter-spacing:3px">${stars}</span>` +
       `<br><b>+${gained}</b> points (${state.hearts}♥ kept, speed +${speedBonus}) · total <b>${state.score}</b> · best ${bestScore()}`;
     const finale = levelIndexFor(state.round) === LEVELS.length-1;
-    if (finale) story += `<br><br>🎺 <b>The Triumphal Procession!</b> Peter marches at the front, the hunters behind, the wolf bound for the zoo — and the tale begins anew: <b>${tierFor(state.round+1)}</b>, a little wilder each time.`;
+    if (finale){
+      story += `<br><br>🎺 <b>The Triumphal Procession!</b> Peter marches at the front, the hunters behind, the wolf bound for the zoo — and the tale begins anew: <b>${tierFor(state.round+1)}</b>, a little wilder each time.`;
+      try{ localStorage.setItem("pw_done","1"); }catch(e){}
+    }
     const nx=LEVELS[levelIndexFor(state.round+1)]; setCrest(crest);
     const page = nx.tale ? `<br><br>📖 <i>${nx.tale}</i>` : "";
     showModal(title, `${story}${scoreLine}${page}<br><br><b>Next — ${nx.name}:</b> ${nx.brief}`, `Begin: ${nx.name} ▶`);
     Audio.motif(nx.type);
+    speak(`${title}. ${nx.tale||""}`);
     startBtn.onclick=()=>{ state.round++; startRound(); };
   }
   const winEscape  = () => advance("🏡","Safe at home! 🏡",`Peter slipped through the gate with <b>all ${state.need} apples</b> — the wolf never caught him.`,"win");
@@ -2237,6 +2533,7 @@
 
   function lose(why){
     state.mode="lost"; Audio.musicStop(); Audio.lose(); setCrest("🐺");
+    if (state.score > bestScore()) localStorage.setItem("pw_best", state.score);
     const msgs = {
       caught:["The wolf caught Peter! 🐺","So sharp were the wolf's senses that it found Peter among the grass. Move softly, throw apples, and use cover."],
       bird:  ["The cat caught the bird! 🐱","The cat pounced before the bird reached the tree. Freeze it with apples and keep the bird close to you."],
@@ -2244,8 +2541,9 @@
       grandpa:["The wolf caught Grandpa! 🐺","Keep Grandpa close in the dark — he can't run. Listen for the wolf, hide in bushes, and drive it off with apples."],
     };
     const [t,b] = msgs[why] || msgs.caught;
-    showModal(t, `${b}<br><br>Score so far: <b>${state.score}</b> · best ${bestScore()}`, "Try again ↺");
-    startBtn.onclick=()=>{ startRound(); };
+    const endlessLine = state.type==="endless" ? `<br>You survived <b>${Math.floor(state.t/60)}s</b> against <b>${wolves.length}</b> ${wolves.length===1?"wolf":"wolves"}.` : "";
+    showModal(t, `${b}${endlessLine}<br><br>Score so far: <b>${state.score}</b> · best ${bestScore()}`, "Try again ↺");
+    startBtn.onclick=()=>{ state.type==="endless" ? startEndless() : startRound(); };
   }
 
   function togglePause(){
@@ -2254,6 +2552,33 @@
 
   startBtn.onclick = () => { state.round=1; state.score=0; startRound(); };
   if (bestScore() > 0) mBody.innerHTML += `<br><b>Best score: ${bestScore()} ⭐</b>`;
+
+  // narrator toggle (persisted)
+  const narrateChk = document.getElementById("narrateChk");
+  narrateChk.checked = narrate;
+  narrateChk.onchange = () => { narrate = narrateChk.checked; try{ localStorage.setItem("pw_narrate", narrate?"1":"0"); }catch(e){} };
+
+  // chapter select + continue (shown on the title page only)
+  const extras = document.createElement("div");
+  extras.style.cssText = "margin-top:12px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center";
+  const chapBtn = (label, fn) => { const b=document.createElement("button"); b.textContent=label;
+    b.style.cssText="border:1px solid #cfc3a6;cursor:pointer;background:#fff;color:#3a474f;font-weight:600;font-size:12px;padding:6px 10px;border-radius:8px";
+    b.onclick=fn; extras.appendChild(b); };
+  let savedRun = null;
+  try{ savedRun = JSON.parse(localStorage.getItem("pw_run")||"null"); }catch(e){}
+  if (savedRun && savedRun.round>1)
+    chapBtn(`▶ Continue — ch.${((savedRun.round-1)%LEVELS.length)+1} · ${tierFor(savedRun.round)} · ${savedRun.score}⭐`,
+      ()=>{ state.round=savedRun.round; state.score=savedRun.score; startRound(); });
+  let cycleDone = false;
+  try{ cycleDone = localStorage.getItem("pw_done")==="1"; }catch(e){}
+  if (cycleDone){
+    LEVELS.forEach((L,i)=>chapBtn(`${i+1}. ${L.name}`, ()=>{ state.round=i+1; state.score=0; startRound(); }));
+    chapBtn("∞ Endless Dusk", startEndless);
+  }
+  if (extras.children.length) document.getElementById("modal").insertBefore(extras, document.querySelector("#modal .foot"));
+  const _showModal = showModal;
+  showModal = (t2,b2,btn2) => { _showModal(t2,b2,btn2); extras.style.display = state.mode==="menu" ? "" : "none"; };
+
   makeLevel(state.round);   // populate a scene behind the menu
 
   if (!CanvasRenderingContext2D.prototype.roundRect){

@@ -36,7 +36,9 @@ as a folder if you prefer not to use the portable exe.
 | Move | `W` `A` `S` `D` or arrow keys |
 | Tip-toe (quiet, slower) | hold `Shift` |
 | Throw apple / search / spring the trap / shake a tree | `Space` |
-| Whistle (calls a friend — but the wolf hears it too) | `E` |
+| Whistle (calls a friend / sends the bird at the wolf — but predators hear it) | `E` |
+| Drop the rope (level 4 — carrying it slows you and blocks throwing) | `Q` |
+| Photo mode (hide the HUD) | `H` |
 | Pause | `P` |
 | Mute / unmute | `M` |
 | **Touch screens** | drag the **left half** to walk, tap the **right half** to act |
@@ -102,6 +104,27 @@ as a folder if you prefer not to use the portable exe.
   beside the level name.
 - **Photo mode**: press `H` to hide the whole HUD for a clean screenshot of the meadow;
   press it again to bring it back.
+- **Footprints & sound**: Peter and the wolf press fading tracks into the grass (bright
+  in the winter snow), and sprinting close past a tree or rock can *snap a twig* — a
+  ripple of noise every predator turns toward. The whistle on level 1 now sends the
+  scout bird diving at the wolf, pinning it for a moment.
+- **The wolf learns**: hide in the same bush too long while it hunts and it sniffs the
+  spot out for good (paw prints mark a blown hiding place) — faster on higher tiers.
+- **Seasons by tier**: the *Wild* cycle turns the meadow to autumn (golden canopies,
+  leaves on every level) and *Prokofiev* to winter (pine trees capped with snow,
+  snowfall, pale light).
+- **Living touches**: the cat sits to wash a paw mid-prowl, a startled dove flutters
+  skyward if a wolf runs beneath it, and a far-off horn sounds a few seconds before
+  the hunters arrive — bait the wolf toward it if you dare.
+- **Chapter select & continue**: finish the tale once and the title page offers every
+  chapter directly, plus **Endless Dusk** — survive a gathering pack of wolves (one
+  more slips from the trees every twenty seconds) for points. Your run (chapter, tier
+  and score) is saved, so you can close the browser and pick the tale back up.
+- **A narrator**: tick "read the story aloud" and the storybook lines are spoken
+  between chapters (browser speech, no downloads).
+- **The curtain call**: after the Great Chase, the whole cast lines up on a spotlit
+  stage — Peter waving, the cat washing, the wolf on its rope — under the tale's
+  famous closing line about the duck.
 - **The scout bird**: on the first level a little bird wheels and chirps above the
   wolf wherever it prowls, so you always know where danger is — just as it taunts the
   wolf in the story.
