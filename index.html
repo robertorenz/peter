@@ -540,6 +540,21 @@
     patrol.y += Math.sin(patrol.t*0.017)*0.35;        // an unhurried, wandering line
     if (patrol.t>140 && (patrol.x < cam.x-190 || patrol.x > cam.x+W+190)) patrol = null;
   }
+  // the wolf wants nothing to do with the hunters — returns their midpoint if they're close
+  function hunterThreat(e, range=340){
+    if (!patrol) return null;
+    const hx2 = patrol.x-patrol.dir*42, hy2 = patrol.y+12;
+    const d = Math.min(dist(e.x,e.y,patrol.x,patrol.y), dist(e.x,e.y,hx2,hy2));
+    return d < range ? { x:(patrol.x+hx2)/2, y:(patrol.y+hy2)/2 } : null;
+  }
+  function wolfSlinks(){                              // true if the wolf is fleeing the patrol this frame
+    if (!wolf || wolf.stun>0) return false;
+    const threat = hunterThreat(wolf);
+    if (!threat) return false;
+    wolf.slink=14; wolf.crouch=0; wolf.mode="patrol";
+    moveToward(wolf, wolf.x*2-threat.x, wolf.y*2-threat.y, wolf.speed*1.05);
+    return true;
+  }
 
   // ---- an occasional dove glides across the meadow ----
   let dove = null;
@@ -720,7 +735,7 @@
   }
 
   const mkPeter = (x,y,rope) => ({x,y,r:13,face:1,step:0,hasRope:false});
-  const mkWolf  = (x,y,spd) => ({x,y,r:18,vx:0,vy:0,face:1,step:0,mode:"patrol",tx:x,ty:y,growlCd:0,stun:0,speed:spd,crouch:0,pounce:0,pounceCd:90,pvx:0,pvy:0});
+  const mkWolf  = (x,y,spd) => ({x,y,r:18,vx:0,vy:0,face:1,step:0,mode:"patrol",tx:x,ty:y,growlCd:0,stun:0,speed:spd,crouch:0,pounce:0,pounceCd:90,pvx:0,pvy:0,slink:0});
   const mkCat   = (x,y,spd) => ({x,y,r:14,vx:0,vy:0,face:1,step:0,stun:0,speed:spd,growlCd:0,crouch:0,pounce:0,pounceCd:90,pvx:0,pvy:0});
 
   // ================= CAMERA =================
@@ -873,6 +888,7 @@
     updateDove();
     updateDragonflies();
     updatePatrol();
+    if (wolf && wolf.slink>0) wolf.slink--;
     if (ropeToss){ ropeToss.t++; if (ropeToss.t>60) ropeToss=null; }
 
     // Peter
@@ -961,7 +977,8 @@
     else { state.alert=Math.max(0,state.alert-0.9); if (state.alert<30) wolf.mode="patrol"; }
 
     // a fully-alert wolf hunts faster, but only an actual pounce can catch Peter
-    if (wolf.mode==="hunt"){ chase(wolf, peter.x, peter.y, 1.5 + (state.alert>=100?0.25:0), true); }
+    if (wolfSlinks()){ state.alert=Math.max(0,state.alert-1.4); }
+    else if (wolf.mode==="hunt"){ chase(wolf, peter.x, peter.y, 1.5 + (state.alert>=100?0.25:0), true); }
     else { if (dist(wolf.tx,wolf.ty,wolf.x,wolf.y)<24 || state.t%140===0){ wolf.tx=rand(60,world.w-60); wolf.ty=rand(60,world.h-60); }
            if (wolf.growlCd>0) wolf.growlCd--; moveToward(wolf, wolf.tx, wolf.ty, wolf.speed*0.8); }
 
@@ -969,7 +986,7 @@
     const atGate = peter.x>gate.x-30 && Math.abs(peter.y-gate.y)<gate.h/2;
     if (atGate){ if (state.apples>=state.need) return winEscape(); else flash("Gather every apple first!"); }
 
-    setMeter(state.alert, wolf.mode==="hunt"?"⚠ The wolf has your scent!":(state.alert>8?"The wolf grows curious…":"The wolf's suspicion"));
+    setMeter(state.alert, wolf.slink>0?"🏹 Hunters near — the wolf slinks away!":wolf.mode==="hunt"?"⚠ The wolf has your scent!":(state.alert>8?"The wolf grows curious…":"The wolf's suspicion"));
     state.objective = `gather apples & reach the gate`;
   }
 
@@ -1009,25 +1026,44 @@
         if (sp>0) moveToward(duck,tx,ty,sp); else { duck.vx*=0.8; duck.vy*=0.8; duck.x+=duck.vx; duck.y+=duck.vy; resolve(duck); }
       }
     }
-    if (!duck.safe) chase(wolf, duck.x, duck.y, 1.0);
+    if (!wolfSlinks() && !duck.safe) chase(wolf, duck.x, duck.y, 1.0);
     if (state.invuln<=0 && !duck.safe && dist(wolf.x,wolf.y,duck.x,duck.y) < wolf.r+9){ duck.gone=true; return lose("duck"); }
     if (duck.safe) return winDuck();
 
     const dw=dist(wolf.x,wolf.y,duck.x,duck.y);
-    setMeter(clamp(100-(dw-28)/2.2,0,100), wolf.stun>0?"The wolf is frozen! ❄":(dw<140?"⚠ The wolf is upon the duck!":"Danger to the duck"));
+    setMeter(clamp(100-(dw-28)/2.2,0,100), wolf.slink>0?"🏹 Hunters near — the wolf slinks away!":wolf.stun>0?"The wolf is frozen! ❄":(dw<140?"⚠ The wolf is upon the duck!":"Danger to the duck"));
     state.objective = duck.following ? "Lead the duck to the pond →" : "Reach the duck so it follows you";
+  }
+
+  // Grandpa potters about, but never strays far from the oak
+  function updateGrandpa(){
+    if (!grandpa) return;
+    const g=grandpa;
+    if (g.wait===undefined){ g.wait=90; g.tx=g.x; g.ty=g.y; }
+    if (Math.hypot(g.tx-g.x, g.ty-g.y) < 4){
+      if (g.wait-- <= 0){
+        g.tx = clamp(oak.x + rand(-115,115), 50, world.w-50);
+        g.ty = clamp(oak.y + rand(18,95), 50, world.h-50);   // stays on the sunny side of the tree
+        g.wait = rand(140,380);
+      }
+      g.step += 0.015;                                        // a gentle idle sway while he rests
+    } else {
+      const dx=g.tx-g.x, dy=g.ty-g.y, m=Math.hypot(dx,dy);
+      g.x += dx/m*0.42; g.y += dy/m*0.42;
+      g.face = dx>=0?1:-1; g.step += 0.085;
+    }
   }
 
   function updateRope(){
     // pick up a revealed rope
     if (rope.found && !peter.hasRope && dist(peter.x,peter.y,rope.x,rope.y) < peter.r+16){ peter.hasRope=true; flash("Got the rope! 🪢 To the oak!"); Audio.pickup(); }
-    if (grandpa) grandpa.step+=0.02;
-    // the wolf hunts Peter the whole time
-    chase(wolf, peter.x, peter.y, 1.35, true);
+    updateGrandpa();
+    // the wolf hunts Peter the whole time — unless the hunters wander by
+    if (!wolfSlinks()) chase(wolf, peter.x, peter.y, 1.35, true);
     if (state.invuln<=0 && dist(wolf.x,wolf.y,peter.x,peter.y) < peter.r+wolf.r-3 && catchPeter()) return;
 
     const dw=dist(wolf.x,wolf.y,peter.x,peter.y);
-    setMeter(clamp(100-(dw-40)/2.4,0,100), trap.armed?"Lure the wolf to the oak!":"The wolf is hunting you");
+    setMeter(clamp(100-(dw-40)/2.4,0,100), wolf.slink>0?"🏹 Hunters near — the wolf slinks away!":trap.armed?"Lure the wolf to the oak!":"The wolf is hunting you");
     state.objective = trap.armed ? "Get the wolf to the oak, then Space"
                     : peter.hasRope ? "Carry the rope to the big oak"
                     : rope.found ? "Pick up the rope you uncovered"
@@ -1299,7 +1335,7 @@
     const bnc=Math.sin(w.step)*1.8, x=w.x, y=w.y+bnc, f=w.face;
     drawShadow(x,w.y+18,22);
     ctx.save(); ctx.translate(x,y);
-    ctx.scale(f, w.crouch>0?0.84:(w.pounce>0?1.06:1));   // crouch squash / pounce stretch
+    ctx.scale(f, w.crouch>0?0.84:(w.pounce>0?1.06:(w.slink>0?0.9:1)));   // crouch squash / pounce stretch / cowed slink
     drawWolfBody(w);
     ctx.restore();
     if (w.stun>0) drawZzz(x,y);
@@ -1310,7 +1346,8 @@
   // the wolf's body in local coords (origin at its chest) — shared by the walking
   // sprite and the upside-down "hoisted by the tail" pose in the capture scene
   function drawWolfBody(w){
-    const hunting = w.stun<=0 && !captureAnim && (w.mode==="hunt"||state.type!=="apples");
+    const slinking = w.slink>0;
+    const hunting = w.stun<=0 && !captureAnim && !slinking && (w.mode==="hunt"||state.type!=="apples");
     const top = w.stun>0 ? "#9198a3" : hunting?"#686d76":"#797e87";
     const bot = w.stun>0 ? "#6f7580" : hunting?"#454951":"#54585f";
     const sw=Math.sin(w.step*1.1)*5;
@@ -1320,11 +1357,16 @@
     ctx.beginPath(); ctx.moveTo(-10,10); ctx.lineTo(-10+sw,22); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(8,10); ctx.lineTo(8-sw,22); ctx.stroke();
 
-    // bushy tail (tapered, lighter tip)
+    // bushy tail (tapered, lighter tip) — tucked between the legs when slinking from the hunters
     ctx.strokeStyle=top; ctx.lineWidth=9; ctx.lineCap="round";
-    ctx.beginPath(); ctx.moveTo(-14,2); ctx.quadraticCurveTo(-29,-3,-24-Math.sin(w.step)*3,8); ctx.stroke();
-    ctx.strokeStyle="#d3d6da"; ctx.lineWidth=4; ctx.lineCap="round";
-    ctx.beginPath(); ctx.moveTo(-23,-3); ctx.lineTo(-27,3); ctx.stroke();
+    if (slinking){
+      ctx.beginPath(); ctx.moveTo(-14,2); ctx.quadraticCurveTo(-22,10,-16,18); ctx.stroke();
+      ctx.strokeStyle="#d3d6da"; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(-18,14); ctx.lineTo(-15,18); ctx.stroke();
+    } else {
+      ctx.beginPath(); ctx.moveTo(-14,2); ctx.quadraticCurveTo(-29,-3,-24-Math.sin(w.step)*3,8); ctx.stroke();
+      ctx.strokeStyle="#d3d6da"; ctx.lineWidth=4; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(-23,-3); ctx.lineTo(-27,3); ctx.stroke();
+    }
 
     // near legs (lit) + paws
     ctx.strokeStyle=top; ctx.lineWidth=6.5; ctx.lineCap="round";
@@ -1375,24 +1417,71 @@
     const bnc=Math.sin(c.step)*1.6, x=c.x, y=c.y+bnc, f=c.face;
     drawShadow(x,c.y+14,16);
     ctx.save(); ctx.translate(x,y); ctx.scale(f,1);
-    const body = c.stun>0?"#8a8f98":"#6c727c";
+    const stunned = c.stun>0;
+    const top = stunned?"#b9a389":"#d98e4f", bot = stunned?"#94816c":"#b06a33", dark = stunned?"#7c6d5c":"#8a4e22";
     const sw=Math.sin(c.step*1.1)*4;
-    ctx.strokeStyle="#41464e"; ctx.lineWidth=4; ctx.lineCap="round";
-    ctx.beginPath(); ctx.moveTo(-7,8); ctx.lineTo(-7+sw,17); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(7,8); ctx.lineTo(7-sw,17); ctx.stroke();
-    // tail (curls up)
-    ctx.strokeStyle=body; ctx.lineWidth=5;
-    ctx.beginPath(); ctx.moveTo(-12,2); ctx.quadraticCurveTo(-22,-2,-18,-12); ctx.stroke();
-    ctx.fillStyle=body; ctx.beginPath(); ctx.roundRect(-13,-6,24,14,7); ctx.fill();   // body
-    ctx.beginPath(); ctx.arc(13,-9,8,0,7); ctx.fill();                                 // head
-    ctx.beginPath(); ctx.moveTo(8,-15); ctx.lineTo(11,-23); ctx.lineTo(15,-16); ctx.fill();  // ears
-    ctx.beginPath(); ctx.moveTo(15,-16); ctx.lineTo(19,-23); ctx.lineTo(21,-14); ctx.fill();
-    // stripes
-    ctx.strokeStyle="rgba(40,44,50,.5)"; ctx.lineWidth=2;
-    for (const sx of [-6,-1,4]){ ctx.beginPath(); ctx.moveTo(sx,-6); ctx.lineTo(sx,6); ctx.stroke(); }
-    ctx.fillStyle = c.stun>0?"#9fb4ff":"#bfe35a"; ctx.beginPath(); ctx.arc(16,-9,1.8,0,7); ctx.fill();  // eye
-    ctx.strokeStyle="rgba(255,255,255,.6)"; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(20,-8); ctx.lineTo(28,-9); ctx.moveTo(20,-7); ctx.lineTo(28,-6); ctx.stroke();
+
+    // far legs
+    ctx.strokeStyle=dark; ctx.lineWidth=4.5; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(-8,7); ctx.lineTo(-8+sw,16); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(6,7); ctx.lineTo(6-sw,16); ctx.stroke();
+
+    // raised S-curve tail, tip swishing, with a dark tip
+    const tsw = Math.sin(state.t*0.06 + c.step)*4;
+    ctx.strokeStyle=top; ctx.lineWidth=5.5; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(-12,1); ctx.quadraticCurveTo(-20,0,-21,-8); ctx.quadraticCurveTo(-22,-15,-17+tsw,-19); ctx.stroke();
+    ctx.strokeStyle=dark; ctx.beginPath(); ctx.moveTo(-19+tsw*0.8,-17.2); ctx.lineTo(-17+tsw,-19); ctx.stroke();
+
+    // near legs + cream paws
+    ctx.strokeStyle=top; ctx.lineWidth=4.5;
+    ctx.beginPath(); ctx.moveTo(-4,7); ctx.lineTo(-4-sw,16); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(9,7); ctx.lineTo(9+sw,16); ctx.stroke();
+    ctx.fillStyle="#f6e7d4";
+    for (const [lx,ly] of [[-8+sw,17],[6-sw,17],[-4-sw,17],[9+sw,17]]){ ctx.beginPath(); ctx.ellipse(lx,ly,2.6,1.5,0,0,7); ctx.fill(); }
+
+    // body (gradient) + tabby stripes + cream belly
+    const bg=ctx.createLinearGradient(0,-7,0,9); bg.addColorStop(0,top); bg.addColorStop(1,bot);
+    ctx.fillStyle=bg; ctx.beginPath(); ctx.roundRect(-14,-7,27,15,7.5); ctx.fill();
+    ctx.strokeStyle=dark; ctx.lineWidth=2; ctx.lineCap="round"; ctx.globalAlpha=0.6;
+    for (const sx of [-8,-3,2]){ ctx.beginPath(); ctx.moveTo(sx,-7); ctx.quadraticCurveTo(sx+1.5,-3,sx,1); ctx.stroke(); }
+    ctx.globalAlpha=1;
+    ctx.fillStyle="rgba(246,231,212,.75)"; ctx.beginPath(); ctx.ellipse(6,4.5,6,3.6,0,0,7); ctx.fill();
+
+    // head with soft shading
+    const hg=ctx.createRadialGradient(11,-12,2,13,-9,10);
+    hg.addColorStop(0, stunned?"#c6b096":"#e8a468"); hg.addColorStop(1,top);
+    ctx.fillStyle=hg; ctx.beginPath(); ctx.arc(13,-9,8.5,0,7); ctx.fill();
+
+    // ears with pink inner
+    ctx.fillStyle=top;
+    ctx.beginPath(); ctx.moveTo(7,-14.5); ctx.lineTo(9.5,-23); ctx.lineTo(14,-15.5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(15,-15.5); ctx.lineTo(19.5,-22.5); ctx.lineTo(21.5,-13.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#e8909c";
+    ctx.beginPath(); ctx.moveTo(9.2,-16); ctx.lineTo(10.2,-20.6); ctx.lineTo(12.6,-16); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(16.8,-15.8); ctx.lineTo(19.1,-20.2); ctx.lineTo(20.2,-14.6); ctx.closePath(); ctx.fill();
+
+    // forehead stripes + cream muzzle
+    ctx.strokeStyle=dark; ctx.lineWidth=1.6; ctx.globalAlpha=0.55;
+    ctx.beginPath(); ctx.moveTo(12,-16.5); ctx.lineTo(12,-13.5); ctx.moveTo(15,-16.7); ctx.lineTo(15,-13.7); ctx.stroke();
+    ctx.globalAlpha=1;
+    ctx.fillStyle="#f6e7d4"; ctx.beginPath(); ctx.ellipse(17.5,-6.2,4.6,3.4,0.15,0,7); ctx.fill();
+
+    // green eye with a slit pupil (peacefully closed when stunned)
+    if (stunned){
+      ctx.strokeStyle="#5c5244"; ctx.lineWidth=1.6; ctx.lineCap="round";
+      ctx.beginPath(); ctx.arc(16,-10.5,2,0.15,Math.PI-0.15); ctx.stroke();
+    } else {
+      ctx.fillStyle="#bfe35a"; ctx.beginPath(); ctx.ellipse(16,-10.5,2.4,2.1,0,0,7); ctx.fill();
+      ctx.fillStyle="#26303a"; ctx.beginPath(); ctx.ellipse(16.4,-10.5,0.9,1.8,0,0,7); ctx.fill();
+      ctx.fillStyle="rgba(255,255,255,.8)"; ctx.beginPath(); ctx.arc(15.6,-11.3,0.7,0,7); ctx.fill();
+    }
+
+    // pink nose, little mouth, whiskers
+    ctx.fillStyle="#e8909c"; ctx.beginPath(); ctx.moveTo(20.5,-7.6); ctx.lineTo(22.6,-6.6); ctx.lineTo(20.6,-5.4); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle="rgba(90,60,40,.6)"; ctx.lineWidth=1.1; ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(21.2,-5.6); ctx.quadraticCurveTo(19.5,-3.8,17.5,-4.6); ctx.stroke();
+    ctx.strokeStyle="rgba(255,255,255,.65)"; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(19,-6.5); ctx.lineTo(26.5,-8); ctx.moveTo(19,-5.5); ctx.lineTo(27,-5.5); ctx.moveTo(19,-4.6); ctx.lineTo(26,-3); ctx.stroke();
     ctx.restore();
     if (c.stun>0) drawZzz(x,y);
   }
@@ -1444,14 +1533,18 @@
     const x=g.x, y=g.y+Math.sin(g.step)*1, f=g.face;
     drawShadow(x,g.y+18,15);
     ctx.save(); ctx.translate(x,y); ctx.scale(f,1);
+    const sw=Math.sin(g.step)*2.6;                       // a short, careful stride
     ctx.strokeStyle="#3a3026"; ctx.lineWidth=5; ctx.lineCap="round";
-    ctx.beginPath(); ctx.moveTo(-3,10); ctx.lineTo(-3,22); ctx.moveTo(4,10); ctx.lineTo(4,22); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-3,10); ctx.lineTo(-3+sw,22); ctx.moveTo(4,10); ctx.lineTo(4-sw,22); ctx.stroke();
+    ctx.fillStyle="#2b2118";
+    ctx.beginPath(); ctx.ellipse(-3+sw,23,3.6,2,0,0,7); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(4-sw,23,3.6,2,0,0,7); ctx.fill();
     ctx.fillStyle="#3f6b46"; ctx.beginPath(); ctx.roundRect(-10,-8,20,20,6); ctx.fill();   // green coat
     ctx.fillStyle="#e9d6b8"; ctx.beginPath(); ctx.arc(0,-16,9,0,7); ctx.fill();             // head
     ctx.fillStyle="#efe9e0"; ctx.beginPath(); ctx.arc(0,-10,7,0,Math.PI); ctx.fill();       // beard
     ctx.fillStyle="#6e4a2c"; ctx.beginPath(); ctx.arc(0,-19,9,Math.PI,0); ctx.fill(); ctx.fillRect(-9,-20,18,3);  // hat
     ctx.fillStyle="#26303a"; ctx.beginPath(); ctx.arc(4,-16,1.4,0,7); ctx.fill();
-    ctx.strokeStyle="#7a5230"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(10,-2); ctx.lineTo(14,22); ctx.stroke(); // cane
+    ctx.strokeStyle="#7a5230"; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(10,-2); ctx.lineTo(14+Math.sin(g.step)*1.6,22); ctx.stroke(); // cane taps along
     ctx.restore();
   }
 

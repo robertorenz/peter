@@ -68,7 +68,11 @@ as a folder if you prefer not to use the portable exe.
   drifting lily pad.
 - **Character acting**: Peter blinks and his cap tassel swings as he runs, the wolf's
   ear flicks and its hunting eye pulses red, and both kick up little dust puffs at full
-  speed.
+  speed. The cat is a proper ginger tabby with a swishing tail, and Grandpa potters
+  about near the oak, cane tapping.
+- **The wolf fears the hunters**: when the patrol wanders near, the wolf breaks off
+  whatever it's doing and slinks away, tail tucked between its legs — use the moment
+  to breathe (or to set your trap).
 - Particles, screen shake and hurt-blinks make every splat, pickup and close call land.
 
 ## 🎯 How to win
