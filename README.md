@@ -35,7 +35,8 @@ as a folder if you prefer not to use the portable exe.
 | --- | --- |
 | Move | `W` `A` `S` `D` or arrow keys |
 | Tip-toe (quiet, slower) | hold `Shift` |
-| Throw apple / search / spring the trap | `Space` |
+| Throw apple / search / spring the trap / shake a tree | `Space` |
+| Whistle (calls a friend — but the wolf hears it too) | `E` |
 | Pause | `P` |
 | Mute / unmute | `M` |
 | **Touch screens** | drag the **left half** to walk, tap the **right half** to act |
@@ -84,6 +85,19 @@ as a folder if you prefer not to use the portable exe.
   about until the bird or duck actually wanders into view — then a ❗ flashes, they
   give chase a little faster, and they lose the trail again if their prey slips far
   enough away. A stunned predator forgets what it saw.
+- **A fifth level — Grandfather's Gate**: night has fallen, and Peter must walk old
+  Grandpa home through the dark. The fireflies light only a small circle around Peter;
+  beyond it, the meadow fades to black — and the wolf hunts whichever of the pair it
+  can see.
+- **The scout bird**: on the first level a little bird wheels and chirps above the
+  wolf wherever it prowls, so you always know where danger is — just as it taunts the
+  wolf in the story.
+- **Peter's whistle** (`E`): calls the bird or the duck to him from far across the
+  meadow — but sound carries, and every predator within earshot comes to look.
+- **Hiding bushes**: on the levels where the wolf hunts Peter himself, berry bushes
+  dot the meadow — step inside and you vanish from the wolf's senses.
+- **Shakeable trees**: out of apples? Stand at a tree and press `Space` to shake one
+  or two loose — the racket draws the hunters' quarry straight toward you.
 - Particles, screen shake and hurt-blinks make every splat, pickup and close call land.
 
 ## 🎯 How to win
