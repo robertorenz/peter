@@ -89,6 +89,19 @@ as a folder if you prefer not to use the portable exe.
   Grandpa home through the dark. The fireflies light only a small circle around Peter;
   beyond it, the meadow fades to black — and the wolf hunts whichever of the pair it
   can see.
+- **The finale — The Great Chase**: one long, continuous sprint across a meadow four
+  screens wide, the wolf at Peter's heels the whole way. The world crossfades from
+  sunlit morning through golden afternoon and blue dusk into deep night as you run —
+  and it ends when you lure the wolf under the old oak's waiting snare. The full
+  orchestral recording plays it out.
+- **Storybook interludes**: between levels, the win page shows a line from the actual
+  tale (“Early one morning, Peter opened the gate…”) while the next character's
+  leitmotif plays softly.
+- **Named difficulty tiers**: finish all six adventures and the tale begins anew, a
+  little wilder — <i>Storybook</i>, then <i>Wild</i>, then <i>Prokofiev</i>, shown
+  beside the level name.
+- **Photo mode**: press `H` to hide the whole HUD for a clean screenshot of the meadow;
+  press it again to bring it back.
 - **The scout bird**: on the first level a little bird wheels and chirps above the
   wolf wherever it prowls, so you always know where danger is — just as it taunts the
   wolf in the story.

@@ -173,7 +173,7 @@
         </div>
       </div>
     </div>
-    <div class="foot">Press <kbd>P</kbd> to pause · <kbd>M</kbd> to mute</div>
+    <div class="foot">Press <kbd>P</kbd> to pause · <kbd>M</kbd> to mute · <kbd>H</kbd> photo mode</div>
   </div>
 
 <script>
@@ -242,8 +242,9 @@
       duck:   ["audio/duck.wav", "audio/wolf.wav"],
       rope:   ["audio/wolf.wav", "audio/hunters.wav"],
       escort: ["audio/grandfather.wav", "audio/wolf.wav"],
+      chase:  ["audio/full.wav"],
     };
-    const SYNTH_THEME = { apples:"peter", bird:"bird", duck:"duck", rope:"wolf", escort:"grandfather" };
+    const SYNTH_THEME = { apples:"peter", bird:"bird", duck:"duck", rope:"wolf", escort:"grandfather", chase:"hunters" };
     const ALL_TRACKS = ["audio/peter.wav","audio/duck.wav","audio/bird.wav","audio/cat.wav",
                         "audio/grandfather.wav","audio/wolf.wav","audio/hunters.wav","audio/full.wav"];
     let curType = "apples", nowPlaying = "";
@@ -274,6 +275,15 @@
     return {
       pickup(){ tone(660,0.12,"triangle",0.18); tone(990,0.12,"triangle",0.14,0.08); },
       whistle(){ [784,1046,1318,1046].forEach((f,i)=>tone(f,0.1,"sine",0.13,i*0.09)); },
+      motif(type){                                 // one-shot leitmotif for the storybook interludes
+        ensure();
+        const th = THEMES[SYNTH_THEME[type] || "peter"]; if (!th) return;
+        let when = 1.0;
+        for (const [n,fr] of th.notes.slice(0,10)){
+          if (n>0){ const f=midiHz(n); tone(f, fr/60*1.6, "triangle", 0.07, when); tone(f/2, fr/60*1.4, "sine", 0.04, when); }
+          when += fr/60;
+        }
+      },
       win(){ [523,659,784,1046].forEach((f,i)=>tone(f,0.3,"triangle",0.16,i*0.12)); },
       capture(){ [523,659,784,1046,784,1046,1318,1046].forEach((f,i)=>tone(f,0.34,"triangle",0.17,i*0.13)); },
       lose(){ tone(180,0.5,"sawtooth",0.2); tone(120,0.6,"sawtooth",0.18,0.08); },
@@ -320,6 +330,7 @@
 
   // ================= INPUT =================
   const keys = {};
+  let photo = false;
   const KEYMAP = { arrowup:"up",arrowdown:"down",arrowleft:"left",arrowright:"right",
                    w:"up",s:"down",a:"left",d:"right" };
   addEventListener("keydown", (e) => {
@@ -332,6 +343,10 @@
     }
     if (k === "shift") keys.sneak = true;
     if (k === "e" && state.mode==="play") whistle();
+    if (k === "h"){ photo=!photo;                     // photo mode: hide the HUD for a clean screenshot
+      hudEl.style.opacity = photo?"0":""; meterEl.style.opacity = photo?"0":"";
+      if (!photo) flash("HUD back — 📷 H hides it again");
+    }
     if (k === "p") { if (state.mode==="play") togglePause(); else if (state.mode==="pause") togglePause(); }
     if (k === "m") { const m = Audio.toggle(); flash(m ? "Muted 🔇" : "Sound on 🔊"); }
   });
@@ -658,16 +673,26 @@
   // ================= WORLD / LEVELS =================
   const LEVELS = [
     { type:"apples", name:"The Meadow",
+      tale:"Early one morning, Peter opened the gate and went out into the big green meadow.",
       brief:"Gather every apple, then slip home through the <b>gate</b> — or lure the wolf onto the <b>rope by the old oak</b> and press <kbd>Space</kbd> for a hero's ending." },
     { type:"bird", name:"Save the Bird",
+      tale:"On the branch of a big tree sat a little bird, Peter's friend. “All is quiet,” chirped the bird gaily.",
       brief:"The <b>cat</b> is stalking the little <b>bird</b>! Throw apples with <kbd>Space</kbd> to <b>freeze the cat</b>, and lead the bird to the safety of the <b>tall tree</b>." },
     { type:"duck", name:"Rescue the Duck",
+      tale:"“What kind of bird are you, if you can't fly?” said the little bird. “What kind of bird are YOU, if you can't swim?” said the duck.",
       brief:"Lead the <b>duck</b> across the wide meadow to the <b>pond</b>. <b>Stun the wolf</b> with apples (<kbd>Space</kbd>) and weave around the rocks, cliffs and trees — your friend follows you." },
     { type:"rope", name:"Trap the Wolf",
+      tale:"Round and round the tree walked the wolf, looking up at them with greedy eyes.",
       brief:"Help <b>Grandpa</b>! Search under the <b>rocks</b> (<kbd>Space</kbd>) for the hidden <b>rope</b>, carry it to the <b>big oak</b>, then lure the wolf there and spring the trap." },
     { type:"escort", name:"Grandfather's Gate",
+      tale:"Grandfather shook his head: “The meadow is a dangerous place. If a wolf should come out of the forest — then what would you do?”",
       brief:"Night has fallen, and <b>Grandpa</b> must get home. Lead him through the dark to the <b>gate</b> — the fireflies light only a little circle around Peter, and the <b>wolf</b> is out there. <kbd>Space</kbd> throws apples." },
+    { type:"chase", name:"The Great Chase",
+      tale:"Just then — out of the forest came the great grey wolf!",
+      brief:"<b>Run, Peter, run!</b> The wolf is right at your heels. Dash across the whole meadow — through golden afternoon, blue dusk and deep night — and lead it under the <b>old oak's snare</b> waiting at the very end. <kbd>Space</kbd> throws apples." },
   ];
+  const TIERS = ["Storybook","Wild","Prokofiev"];
+  const tierFor = (r) => TIERS[Math.min(TIERS.length-1, Math.floor((r-1)/LEVELS.length))];
   const levelIndexFor = (round) => ((round - 1) % LEVELS.length);
 
   let world = { w:W, h:H };
@@ -711,7 +736,10 @@
     else if (L.type==="bird") buildBird(round);
     else if (L.type==="duck") buildDuck(round);
     else if (L.type==="rope") buildRope(round);
-    else buildEscort(round);
+    else if (L.type==="escort") buildEscort(round);
+    else buildChase(round);
+    const tier = tierFor(round);
+    if (tier!=="Storybook") lvlName.textContent = L.name+" · "+tier;
 
     state.scroll = world.w > W || world.h > H;
     // hiding bushes on the levels where the wolf hunts Peter himself
@@ -827,6 +855,29 @@
     state.objective = "Lead Grandpa home to the gate →";
   }
 
+  // ---- Level 6: The Great Chase (one long run through all four lights) ----
+  function buildChase(round){
+    world={w:4200,h:640};
+    oak  = { x:world.w-240, y:340, r:50 };
+    trap = { x:oak.x+38, y:oak.y+46, r:36, armed:true };   // the snare waits, already hung
+    const keep=[{x:140,y:320,d:230},{x:oak.x,y:oak.y,d:280}];
+    addObstacles(30, ["tree","rock","tree"], keep);
+    for (let i=0;i<12;i++){ const p=placeAway(keep.concat(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+40}))),110,70); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
+    peter = mkPeter(140,320); state.apples=3;
+    wolf  = mkWolf(20,320, 1.6+round*0.04);
+    state.phase="run";
+  }
+
+  function updateChase(){
+    if (!wolfSlinks()) chase(wolf, peter.x, peter.y, 1.4, true);
+    if (state.invuln<=0 && dist(wolf.x,wolf.y,peter.x,peter.y) < peter.r+wolf.r-3 && catchPeter()) return;
+    if (dist(wolf.x,wolf.y,trap.x,trap.y) < trap.r+wolf.r) return springTrap(winChase);
+    const dw=dist(wolf.x,wolf.y,peter.x,peter.y);
+    setMeter(clamp(100-(dw-40)/3,0,100),
+      wolf.slink>0?"🏹 Hunters near — the wolf slinks away!":wolf.stun>0?"The wolf is frozen! ❄":dw<170?"⚠ The wolf is at your heels!":"Run for the old oak!");
+    state.objective = "Run! Lead the wolf under the old oak →";
+  }
+
   function addObstacles(n, kinds, keep){
     for (let i=0;i<n;i++){
       const kind = kinds[(Math.random()*kinds.length)|0];
@@ -860,7 +911,7 @@
 
   function doAction(){
     if (state.mode !== "play") return;
-    if (state.type==="bird" || state.type==="duck" || state.type==="escort"){
+    if (state.type==="bird" || state.type==="duck" || state.type==="escort" || state.type==="chase"){
       if (state.apples<=0 && shakeTree()) return;                       // out of ammo? shake a tree
       throwApple();
     }
@@ -886,7 +937,7 @@
 
   function aimTarget(){
     if (state.type==="bird") return cat;
-    if (state.type==="duck" || state.type==="rope" || state.type==="escort") return wolf;
+    if (state.type==="duck" || state.type==="rope" || state.type==="escort" || state.type==="chase") return wolf;
     return null;
   }
   function throwApple(){
@@ -1070,7 +1121,7 @@
         flash(a.ammo ? "🍎 picked up (ammo)" : "🍎 +1"); }
     }
     // gentle ammo respawn for throw levels
-    if ((state.type==="bird"||state.type==="duck"||state.type==="rope"||state.type==="escort") && state.t%280===0){
+    if ((state.type==="bird"||state.type==="duck"||state.type==="rope"||state.type==="escort"||state.type==="chase") && state.t%280===0){
       const left=apples.filter(a=>!a.got).length;
       if (left<3){ const p=placeAway(obstacles.map(o=>({x:o.x,y:o.y,d:o.r+40})),100,70); apples.push({x:p.x,y:p.y,got:false,bob:rand(0,7),ammo:true}); }
     }
@@ -1079,7 +1130,8 @@
     else if (state.type==="bird") updateBird();
     else if (state.type==="duck") updateDuck();
     else if (state.type==="rope") updateRope();
-    else updateEscort();
+    else if (state.type==="escort") updateEscort();
+    else updateChase();
 
     updateHUD();
   }
@@ -1298,6 +1350,7 @@
     { top:"#5f9a74", bot:"#42775a", tint:"rgba(45,70,130,.16)", flies:14 },
     { top:"#42704f", bot:"#2e523c", tint:"rgba(8,18,48,.30)", night:true, flies:26 },
     { top:"#31563f", bot:"#22402e", tint:"rgba(6,10,36,.32)", night:true, flies:36 },
+    { top:"#79b566", bot:"#578f48", tint:null },   // the chase blends through the first four as you run
   ];
 
   function draw(){
@@ -1380,7 +1433,12 @@
 
     // atmosphere: level tint + soft vignette (screen space)
     const pal = PALETTES[state.level];
-    if (pal.tint){ ctx.fillStyle = pal.tint; ctx.fillRect(0,0,W,H); }
+    if (state.type==="chase"){
+      const z=chaseZone();
+      if (z.A.tint){ ctx.fillStyle=z.A.tint; ctx.fillRect(0,0,W,H); }
+      if (z.B.tint && z.f>0.01){ ctx.save(); ctx.globalAlpha=z.f; ctx.fillStyle=z.B.tint; ctx.fillRect(0,0,W,H); ctx.restore(); }
+    }
+    else if (pal.tint){ ctx.fillStyle = pal.tint; ctx.fillRect(0,0,W,H); }
     // the light slowly drifts as the level wears on: day turns golden, dusk deepens
     if (!pal.night){
       const drift = Math.min(1, state.t/14400);
@@ -1392,6 +1450,7 @@
     vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(10,18,24,.34)");
     ctx.fillStyle = vg; ctx.fillRect(0,0,W,H);
 
+    if (photo) return;                 // photo mode: just the meadow, no chrome
     drawMinimap();
     drawTouchUI();
 
@@ -1405,11 +1464,25 @@
     }
   }
 
+  // the chase crossfades through the first four palettes as Peter runs east
+  function chaseZone(){
+    const prog = clamp((cam.x+W/2)/world.w*4 - 0.5, 0, 3);
+    const i = Math.floor(prog);
+    return { A:PALETTES[i], B:PALETTES[Math.min(3,i+1)], f:prog-i };
+  }
   function drawGround(){
     const pal=PALETTES[state.level];
-    const g=ctx.createLinearGradient(0,0,0,H);
-    g.addColorStop(0,pal.top); g.addColorStop(1,pal.bot);
-    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    if (state.type==="chase"){
+      const z=chaseZone();
+      let g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,z.A.top); g.addColorStop(1,z.A.bot);
+      ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+      if (z.f>0.01){ g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,z.B.top); g.addColorStop(1,z.B.bot);
+        ctx.save(); ctx.globalAlpha=z.f; ctx.fillStyle=g; ctx.fillRect(0,0,W,H); ctx.restore(); }
+    } else {
+      const g=ctx.createLinearGradient(0,0,0,H);
+      g.addColorStop(0,pal.top); g.addColorStop(1,pal.bot);
+      ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    }
     // warm sun-lit patches in the grass (world coords -> screen)
     for (const pa of patches){
       const px=pa.x-cam.x, py=pa.y-cam.y;
@@ -2147,9 +2220,11 @@
     const scoreLine = `<br><br><span style="color:#b9822c;font-weight:700;font-size:20px;letter-spacing:3px">${stars}</span>` +
       `<br><b>+${gained}</b> points (${state.hearts}♥ kept, speed +${speedBonus}) · total <b>${state.score}</b> · best ${bestScore()}`;
     const finale = levelIndexFor(state.round) === LEVELS.length-1;
-    if (finale) story += `<br><br>🎺 <b>The Triumphal Procession!</b> Peter marches at the front, the hunters behind, the wolf bound for the zoo — and the tale begins anew, a little wilder each time.`;
+    if (finale) story += `<br><br>🎺 <b>The Triumphal Procession!</b> Peter marches at the front, the hunters behind, the wolf bound for the zoo — and the tale begins anew: <b>${tierFor(state.round+1)}</b>, a little wilder each time.`;
     const nx=LEVELS[levelIndexFor(state.round+1)]; setCrest(crest);
-    showModal(title, `${story}${scoreLine}<br><br><b>Next — ${nx.name}:</b> ${nx.brief}`, `Begin: ${nx.name} ▶`);
+    const page = nx.tale ? `<br><br>📖 <i>${nx.tale}</i>` : "";
+    showModal(title, `${story}${scoreLine}${page}<br><br><b>Next — ${nx.name}:</b> ${nx.brief}`, `Begin: ${nx.name} ▶`);
+    Audio.motif(nx.type);
     startBtn.onclick=()=>{ state.round++; startRound(); };
   }
   const winEscape  = () => advance("🏡","Safe at home! 🏡",`Peter slipped through the gate with <b>all ${state.need} apples</b> — the wolf never caught him.`,"win");
@@ -2158,6 +2233,7 @@
   const winDuck    = () => advance("🦆","The duck is safe! 🦆",`Across the whole meadow, dodging rocks and stunning the wolf, Peter led the duck home to her pond. A brave rescue!`,"win");
   const winRope    = () => advance("🪢","The wolf is trapped! 🪢",`Peter found the hidden rope, lured the wolf to the great oak, and he and Grandpa tied him fast. The hunters can take him to the zoo!`,"capture");
   const winEscort  = () => advance("🏮","Home through the dark! 🏮",`Hand in hand through the whispering night meadow, Peter led Grandpa safely home to the gate — the fireflies lighting every careful step.`,"win");
+  const winChase   = () => advance("🐺","The great chase! 🐺",`Across sunlit meadow, golden afternoon, blue dusk and deepest night Peter ran and ran — and at the very last moment the old oak's snare snapped shut around the wolf's tail!`,"capture");
 
   function lose(why){
     state.mode="lost"; Audio.musicStop(); Audio.lose(); setCrest("🐺");
