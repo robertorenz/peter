@@ -59,7 +59,14 @@ as a folder if you prefer not to use the portable exe.
   confetti. Press `Space` (or tap) to skip.
 - **A minimap** in the corner of every big scrolling level shows friends, foes and the goal.
 - **Each level has its own light**: day meadow, golden afternoon with drifting leaves,
-  blue dusk, and a night forest full of fireflies.
+  blue dusk, and a night forest full of fireflies — and the light slowly drifts as a
+  level wears on, day turning golden and dusk deepening toward night.
+- **Weather moments**: now and then a soft drizzle passes over the meadow (rain
+  streaks, ripple rings in the grass, the sun shafts hiding behind the clouds), or a
+  gust of wind bends every tree and sends loose leaves racing sideways.
+- **Little lives**: when nothing threatens them, the bird takes a wriggling dust bath
+  and the duck pauses mid-swim to preen its wing; the cat drops into a low creeping
+  stalk when it spots the bird; and Peter waves hello when the dove glides past.
 - **A living meadow**: cloud shadows drift across the grass, soft sun shafts and sunlit
   patches warm the day levels, wind waves ripple through swaying grass and real petaled
   flowers, butterflies flutter between blooms, dragonflies hover and dart, pollen floats

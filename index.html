@@ -556,6 +556,51 @@
     return true;
   }
 
+  // ---- weather moments: a passing drizzle, or a gust of wind through the meadow ----
+  let weather = null, ripples = [];
+  function updateWeather(){
+    if (!weather){
+      if (Math.random() < 1/4200){
+        const kind = Math.random()<0.5 ? "rain" : "gust";
+        weather = { kind, t:0, dur: kind==="rain"?1700:260, dir: Math.random()<0.5?1:-1 };
+      } else return;
+    }
+    weather.t++;
+    const p = weather.t/weather.dur;
+    state.gust = weather.kind==="gust" ? Math.sin(Math.PI*p)*weather.dir : 0;
+    state.rain = weather.kind==="rain" ? Math.min(1, weather.t/150, (weather.dur-weather.t)/150) : 0;
+    if (weather.kind==="rain"){
+      if (state.t%8===0) ripples.push({ x:cam.x+rand(0,W), y:cam.y+rand(0,H), t:0 });
+      if (pond && state.t%26===0) ripples.push({ x:pond.x+rand(-0.8,0.8)*pond.rx, y:pond.y+rand(-0.8,0.8)*pond.ry, t:0 });
+    }
+    if (weather.kind==="gust" && state.t%3===0)     // leaves torn loose, racing sideways
+      particles.push({ x:cam.x+(weather.dir>0?-10:W+10), y:cam.y+rand(0,H), vx:weather.dir*rand(4.5,7), vy:rand(-0.5,0.8), g:0,
+        life:150, max:150, c:["#d9a441","#a8c26a","#e8d24a"][(Math.random()*3)|0], r:rand(1.6,2.6) });
+    for (const r of ripples) r.t++;
+    ripples = ripples.filter(r => r.t < 42);
+    if (weather.t >= weather.dur){ weather=null; state.gust=0; state.rain=0; }
+  }
+  function drawRipples(){
+    for (const r of ripples){
+      const a = (1-r.t/42)*0.35;
+      ctx.strokeStyle=`rgba(230,240,245,${a.toFixed(3)})`; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.ellipse(r.x, r.y, 2+r.t*0.55, (2+r.t*0.55)*0.45, 0, 0, 7); ctx.stroke();
+    }
+  }
+  function drawRain(){
+    if (state.rain<=0) return;
+    ctx.save(); ctx.globalAlpha=state.rain;
+    ctx.fillStyle="rgba(85,105,135,.10)"; ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle="rgba(205,222,240,.32)"; ctx.lineWidth=1.1; ctx.lineCap="round";
+    ctx.beginPath();
+    for (let i=0;i<70;i++){
+      const rx = ((i*137 + state.t*1.3 + i*i*3) % (W+30)) - 15;
+      const ry = ((i*211 + state.t*9 + i*i*7) % (H+30)) - 15;
+      ctx.moveTo(rx,ry); ctx.lineTo(rx-2.5,ry+10);
+    }
+    ctx.stroke(); ctx.restore();
+  }
+
   // ---- an occasional dove glides across the meadow ----
   let dove = null;
   function updateDove(){
@@ -567,6 +612,9 @@
       return;
     }
     dove.t++; dove.x += dove.dir*dove.spd;
+    if (dove && !dove.waved && peter && Math.abs(dove.x-peter.x)<130 && Math.abs(dove.y-peter.y)<180){
+      dove.waved=true; peter.wave=60;                // Peter waves hello as it passes
+    }
     if (dove.t>90 && (dove.x < cam.x-90 || dove.x > cam.x+W+90)) dove = null;
   }
   function drawDove(){
@@ -623,7 +671,7 @@
   const state = { mode:"menu", round:1, level:0, type:"apples", scroll:false,
                   t:0, alert:0, apples:0, need:0, objective:"", phase:"", invuln:0,
                   flashMsg:"", flashT:0, won:false,
-                  hearts:3, score:0, shake:0 };
+                  hearts:3, score:0, shake:0, gust:0, rain:0 };
   const bestScore = () => +(localStorage.getItem("pw_best") || 0);
 
   const STUN = 150;
@@ -647,6 +695,7 @@
     state.t=0; state.invuln=70; state.won=false; state.phase=""; projectiles=[];
     obstacles=[]; apples=[]; pond=oak=gate=trap=rope=cat=grandpa=null; duck=bird=null;
     state.hearts=3; state.shake=0; particles=[]; flies=[]; dove=null; patrol=null; captureAnim=null; ropeToss=null;
+    weather=null; ripples=[]; state.gust=0; state.rain=0;
     lvlNum.textContent = idx+1; lvlName.textContent = L.name;
     updateHearts();
 
@@ -736,7 +785,7 @@
 
   const mkPeter = (x,y,rope) => ({x,y,r:13,face:1,step:0,hasRope:false});
   const mkWolf  = (x,y,spd) => ({x,y,r:18,vx:0,vy:0,face:1,step:0,mode:"patrol",tx:x,ty:y,growlCd:0,stun:0,speed:spd,crouch:0,pounce:0,pounceCd:90,pvx:0,pvy:0,slink:0});
-  const mkCat   = (x,y,spd) => ({x,y,r:14,vx:0,vy:0,face:1,step:0,stun:0,speed:spd,growlCd:0,crouch:0,pounce:0,pounceCd:90,pvx:0,pvy:0});
+  const mkCat   = (x,y,spd) => ({x,y,r:14,vx:0,vy:0,face:1,step:0,stun:0,speed:spd,growlCd:0,crouch:0,pounce:0,pounceCd:90,pvx:0,pvy:0,stalks:true});
 
   // ================= CAMERA =================
   function centerCamera(){
@@ -888,7 +937,9 @@
     updateDove();
     updateDragonflies();
     updatePatrol();
+    updateWeather();
     if (wolf && wolf.slink>0) wolf.slink--;
+    if (peter && peter.wave>0) peter.wave--;
     if (ropeToss){ ropeToss.t++; if (ropeToss.t>60) ropeToss=null; }
 
     // Peter
@@ -969,7 +1020,7 @@
     if (ent.stun>0){ ent.mode="patrol"; chase(ent, prey.x, prey.y, factor); return; }   // chase ticks the stun down
     const d = dist(ent.x,ent.y,prey.x,prey.y);
     if (ent.mode!=="hunt"){
-      if (d < seeR){ ent.mode="hunt"; ent.spot=34; Audio.growl(); }
+      if (d < seeR){ ent.mode="hunt"; ent.spot = ent.stalks?100:34; Audio.growl(); }
       else {
         if (ent.tx===undefined || dist(ent.tx,ent.ty,ent.x,ent.y)<24 || state.t%170===0){
           ent.tx=rand(60,world.w-60); ent.ty=rand(60,world.h-60);
@@ -978,14 +1029,21 @@
         return;
       }
     } else if (d > seeR*1.7){ ent.mode="patrol"; return; }
+    if (ent.stalks && ent.spot>0 && ent.stun<=0){    // the cat drops low and creeps before the dash
+      moveToward(ent, prey.x, prey.y, ent.speed*0.45);
+      return;
+    }
     chase(ent, prey.x, prey.y, factor);
   }
 
   function updateApples(moving, sneaking){
-    // duck swims (decor)
-    duck.ang+=0.012; duck.x=pond.x+Math.cos(duck.ang)*pond.rx*0.55; duck.y=pond.y+Math.sin(duck.ang)*pond.ry*0.5;
-    duck.face=Math.cos(duck.ang)>=0?1:-1;
+    // duck swims (decor), pausing now and then to preen its wing
+    if (duck.preen>0) duck.preen--;
+    else if (duck.dive<=0 && Math.random()<1/520) duck.preen=110;
+    if (duck.preen<=0){ duck.ang+=0.012; duck.x=pond.x+Math.cos(duck.ang)*pond.rx*0.55; duck.y=pond.y+Math.sin(duck.ang)*pond.ry*0.5;
+      duck.face=Math.cos(duck.ang)>=0?1:-1; }
     duck.dive=clamp(duck.dive+((dist(wolf.x,wolf.y,pond.x,pond.y)<pond.rx+36)?0.05:-0.04),0,1);
+    if (duck.dive>0.2) duck.preen=0;
     if (!trap.armed && state.apples>=state.need){ trap.armed=true; ropeToss={ t:0, x:oak.x-26, y:oak.y+34 };  // the coil by the oak flips up over the branch
       flash("All apples! Snare the wolf under the oak (Space) — or flee home 🏡"); }
 
@@ -1022,6 +1080,13 @@
         else if (dC<150){ tx=bird.x*2-cat.x; ty=bird.y*2-cat.y; sp=2.4; }
         if (sp>0){ moveToward(bird,tx,ty,sp); } else { bird.vx*=0.8; bird.vy*=0.8; bird.x+=bird.vx; bird.y+=bird.vy; resolve(bird); }
         bird.hop+=0.3;
+        // when nothing threatens it, the little bird takes a dust bath
+        if (!bird.following && dC>=150){
+          if (bird.bath>0){ bird.bath--;
+            if (state.t%9===0) particles.push({ x:bird.x+rand(-5,5), y:bird.y+6, vx:rand(-0.5,0.5), vy:rand(-0.6,-0.2),
+              g:0.012, life:20, max:20, c:"rgba(214,196,150,.6)", r:rand(1.2,2) });
+          } else if (Math.random()<1/420) bird.bath=80;
+        } else bird.bath=0;
       }
     }
     // the cat prowls with its own eyes — it must spot the bird before it can hunt it
@@ -1044,6 +1109,11 @@
         if (duck.following){ tx=peter.x-22*peter.face; ty=peter.y+10; sp=2.75; }
         else if (dW<170){ tx=duck.x*2-wolf.x; ty=duck.y*2-wolf.y; sp=2.4; }
         if (sp>0) moveToward(duck,tx,ty,sp); else { duck.vx*=0.8; duck.vy*=0.8; duck.x+=duck.vx; duck.y+=duck.vy; resolve(duck); }
+        // preens while it waits for Peter, wing over beak
+        if (!duck.following && dW>=170){
+          if (duck.preen>0) duck.preen--;
+          else if (Math.random()<1/520) duck.preen=110;
+        } else duck.preen=0;
       }
     }
     if (!wolfSlinks() && !duck.safe) stalk(wolf, duck, 265, 1.1);
@@ -1136,6 +1206,7 @@
     // ground features
     if (state.scroll) { ctx.strokeStyle="rgba(40,70,40,.5)"; ctx.lineWidth=6; ctx.strokeRect(0,0,world.w,world.h); }
     drawCloudShadows();
+    if (ripples.length) drawRipples();
     if (pond) drawPond(pond);
     if (state.type==="duck" && duck && !duck.safe) drawGoalRing(pond.x,pond.y,pond.rx+12,pond.ry+10,"safety ▾");
     if (gate) drawGate();
@@ -1174,8 +1245,10 @@
     drawDove();
     ctx.restore();
 
-    // atmosphere: soft sun shafts on the day levels (screen space)
-    if (state.level<2){
+    drawRain();
+
+    // atmosphere: soft sun shafts on the day levels (screen space, hidden by rain)
+    if (state.level<2 && state.rain<=0.25){
       for (let i=0;i<3;i++){
         const a = 0.026 + 0.02*Math.sin(state.t*0.008 + i*2.1);
         if (a<=0.006) continue;
@@ -1191,6 +1264,13 @@
     // atmosphere: level tint + soft vignette (screen space)
     const pal = PALETTES[state.level];
     if (pal.tint){ ctx.fillStyle = pal.tint; ctx.fillRect(0,0,W,H); }
+    // the light slowly drifts as the level wears on: day turns golden, dusk deepens
+    if (!pal.night){
+      const drift = Math.min(1, state.t/14400);
+      ctx.fillStyle = state.level===2 ? `rgba(25,35,90,${(drift*0.12).toFixed(3)})`
+                                      : `rgba(255,150,60,${(drift*0.09).toFixed(3)})`;
+      ctx.fillRect(0,0,W,H);
+    }
     const vg = ctx.createRadialGradient(W/2,H/2,H*0.52, W/2,H/2,H*0.95);
     vg.addColorStop(0,"rgba(0,0,0,0)"); vg.addColorStop(1,"rgba(10,18,24,.34)");
     ctx.fillStyle = vg; ctx.fillRect(0,0,W,H);
@@ -1225,7 +1305,7 @@
     for (const f of decor){
       const sx=f.x-cam.x, sy=f.y-cam.y;
       if (sx<-12||sx>W+12||sy<-12||sy>H+12) continue;
-      const wind = Math.sin(state.t*0.035 + f.x*0.013 + f.y*0.007)*1.7;
+      const wind = Math.sin(state.t*0.035 + f.x*0.013 + f.y*0.007)*1.7 + state.gust*6;
       if (f.k==="tuft"){ ctx.strokeStyle="rgba(50,90,45,.5)"; ctx.lineWidth=2; ctx.lineCap="round";
         ctx.beginPath(); ctx.moveTo(sx,sy); ctx.quadraticCurveTo(sx-2,sy-4, sx-3+wind,sy-6);
         ctx.moveTo(sx,sy); ctx.quadraticCurveTo(sx,sy-4, sx+wind,sy-7);
@@ -1318,10 +1398,16 @@
     ctx.strokeStyle="rgba(255,255,255,.25)"; ctx.lineWidth=1.5;
     ctx.beginPath(); ctx.moveTo(-5,-6); ctx.lineTo(-5,4); ctx.stroke();  // seam highlight
 
-    // front arm + mitten
+    // front arm + mitten (raised in a wave when a dove passes)
     ctx.strokeStyle="#2f6db0"; ctx.lineWidth=5.5; ctx.lineCap="round";
-    ctx.beginPath(); ctx.moveTo(6,-2); ctx.lineTo(11,5+sw*0.4); ctx.stroke();
-    ctx.fillStyle="#f0c79b"; ctx.beginPath(); ctx.arc(11,6+sw*0.4,3,0,7); ctx.fill();
+    if (p.wave>0){
+      const wv=Math.sin(state.t*0.33)*3;
+      ctx.beginPath(); ctx.moveTo(6,-2); ctx.lineTo(10+wv*0.4,-16); ctx.stroke();
+      ctx.fillStyle="#f0c79b"; ctx.beginPath(); ctx.arc(10+wv,-18,3,0,7); ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.moveTo(6,-2); ctx.lineTo(11,5+sw*0.4); ctx.stroke();
+      ctx.fillStyle="#f0c79b"; ctx.beginPath(); ctx.arc(11,6+sw*0.4,3,0,7); ctx.fill();
+    }
 
     // head with gentle shading
     const headG=ctx.createRadialGradient(-1,-17,2,2,-14,11);
@@ -1438,8 +1524,8 @@
   function drawCat(c){
     const bnc=Math.sin(c.step)*1.6, x=c.x, y=c.y+bnc, f=c.face;
     drawShadow(x,c.y+14,16);
-    ctx.save(); ctx.translate(x,y); ctx.scale(f,1);
     const stunned = c.stun>0;
+    ctx.save(); ctx.translate(x,y); ctx.scale(f, (!stunned && c.spot>0)?0.84:1);   // low stalking crouch
     const top = stunned?"#b9a389":"#d98e4f", bot = stunned?"#94816c":"#b06a33", dark = stunned?"#7c6d5c":"#8a4e22";
     const sw=Math.sin(c.step*1.1)*4;
 
@@ -1523,12 +1609,16 @@
     ctx.fillStyle="#f4f1e8";
     ctx.beginPath(); ctx.ellipse(0,2+sink+wob,11,7,0,0,7); ctx.fill();
     ctx.beginPath(); ctx.moveTo(-9,sink); ctx.lineTo(-16,-3+sink); ctx.lineTo(-9,4+sink); ctx.fill();
-    ctx.beginPath(); ctx.arc(8,-5+sink,5,0,7); ctx.fill();
+    const pr=(duck.preen||0)>0, hx=pr?2:8, hy=(pr?-3:-5)+sink;   // preening: head turned back to the wing
+    ctx.beginPath(); ctx.arc(hx,hy,5,0,7); ctx.fill();
     if (onLand){ ctx.strokeStyle="#e6a23c"; ctx.lineWidth=2; ctx.lineCap="round";
       ctx.beginPath(); ctx.moveTo(-1,8); ctx.lineTo(-1-wob,13); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(3,8); ctx.lineTo(3+wob,13); ctx.stroke(); }
-    ctx.fillStyle="#e6a23c"; ctx.beginPath(); ctx.moveTo(12,-6+sink); ctx.lineTo(19,-4+sink); ctx.lineTo(12,-2+sink); ctx.fill();
-    ctx.fillStyle="#26303a"; ctx.beginPath(); ctx.arc(9,-6+sink,1.1,0,7); ctx.fill();
+    ctx.fillStyle="#e6a23c";
+    if (pr){ const nod=Math.sin(state.t*0.12)*1.2;
+      ctx.beginPath(); ctx.moveTo(hx-1,hy+1); ctx.lineTo(hx-8,hy+6+nod); ctx.lineTo(hx,hy+4); ctx.closePath(); ctx.fill(); }
+    else { ctx.beginPath(); ctx.moveTo(12,-6+sink); ctx.lineTo(19,-4+sink); ctx.lineTo(12,-2+sink); ctx.fill(); }
+    ctx.fillStyle="#26303a"; ctx.beginPath(); ctx.arc(hx+1,hy-1,1.1,0,7); ctx.fill();
     ctx.restore(); ctx.globalAlpha=1;
     if (onLand && !duck.safe){ ctx.save(); ctx.textAlign="center"; ctx.font="13px Segoe UI";
       if (duck.following){ ctx.fillStyle="#e35d6a"; ctx.fillText("♥",duck.x,duck.y-14); } ctx.restore(); }
@@ -1540,6 +1630,7 @@
     const x=bird.x, y=bird.y-hop;
     drawShadow(x,bird.y+6,8);
     ctx.save(); ctx.translate(x,y); ctx.scale(bird.face>=0?1:-1,1);
+    if (bird.bath>0){ ctx.translate(0,3); ctx.rotate(Math.sin(state.t*0.55)*0.24); }   // happy dust-bath wriggle
     ctx.fillStyle="#3f9bd6"; ctx.beginPath(); ctx.ellipse(0,0,8,6,0,0,7); ctx.fill();
     ctx.fillStyle="#ffd45e"; ctx.beginPath(); ctx.ellipse(-1,3,4,3,0,0,7); ctx.fill();
     ctx.fillStyle="#3f9bd6"; ctx.beginPath(); ctx.arc(6,-4,4.5,0,7); ctx.fill();
@@ -1578,7 +1669,7 @@
     else drawCliff(o);
   }
   function drawTree(t){
-    const sway=Math.sin(state.t*0.02 + (t.x+t.y))*3;
+    const sway=Math.sin(state.t*0.02 + (t.x+t.y))*3 + state.gust*8;
     ctx.fillStyle="rgba(20,30,20,.18)"; ctx.beginPath(); ctx.ellipse(t.x,t.y+22,30,9,0,0,7); ctx.fill();
     ctx.fillStyle="#7a5230"; ctx.fillRect(t.x-6,t.y-6,12,30);
     ctx.fillStyle="rgba(40,24,10,.35)"; ctx.fillRect(t.x+2,t.y-6,4,30);   // trunk shading
@@ -1668,7 +1759,7 @@
   }
 
   function drawOak(o){
-    const sway=Math.sin(state.t*0.015)*3;
+    const sway=Math.sin(state.t*0.015)*3 + state.gust*7;
     ctx.fillStyle="rgba(20,30,20,.2)"; ctx.beginPath(); ctx.ellipse(o.x,o.y+o.r*0.8,o.r*1.2,o.r*0.3,0,0,7); ctx.fill();
     ctx.fillStyle="#6e4824"; ctx.fillRect(o.x-12,o.y-10,24,o.r+10);
     ctx.strokeStyle="#6e4824"; ctx.lineWidth=9; ctx.lineCap="round"; ctx.beginPath(); ctx.moveTo(o.x,o.y-4); ctx.lineTo(o.x+38,o.y-20); ctx.stroke();
