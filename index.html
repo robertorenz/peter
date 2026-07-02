@@ -711,7 +711,7 @@
   const LEVELS = [
     { type:"apples", name:"The Meadow",
       tale:"Early one morning, Peter opened the gate and went out into the big green meadow.",
-      brief:"The apples are numbered — gather them <b>in order, 1 to last</b> (the glowing one is next), then slip home through the <b>gate</b> — or lure the wolf onto the <b>rope by the old oak</b> and press <kbd>Space</kbd> for a hero's ending." },
+      brief:"The apples are numbered — gather them <b>in order, 1 to last</b> (the glowing one is next), then slip home through the <b>gate</b> — or lure the wolf onto the <b>rope by the old oak</b> and press <kbd>Space</kbd> for a hero's ending. In a pinch, <kbd>Space</kbd> also <b>hurls your latest apple</b> at the wolf to stun it — it bounces away, and you must fetch it back in order." },
     { type:"bird", name:"Save the Bird",
       tale:"On the branch of a big tree sat a little bird, Peter's friend. “All is quiet,” chirped the bird gaily.",
       brief:"The <b>cat</b> is stalking the little <b>bird</b>! Throw apples with <kbd>Space</kbd> to <b>freeze the cat</b>, and lead the bird to the safety of the <b>tall tree</b>." },
@@ -1024,7 +1024,7 @@
       if (state.apples<=0 && shakeTree()) return;                       // out of ammo? shake a tree
       throwApple();
     }
-    else if (state.type==="apples") tryTrap();
+    else if (state.type==="apples"){ if (!tryTrap()) throwApple(); }
     else if (state.type==="rope") { if (!ropeAction()){ if (state.apples<=0 && shakeTree()) return; throwApple(); } }
   }
 
@@ -1046,7 +1046,7 @@
 
   function aimTarget(){
     if (state.type==="bird") return cat;
-    if (state.type==="duck" || state.type==="rope" || state.type==="escort" || state.type==="chase") return wolf;
+    if (state.type==="apples" || state.type==="duck" || state.type==="rope" || state.type==="escort" || state.type==="chase") return wolf;
     if (state.type==="endless") return nearestWolf(peter.x, peter.y);
     return null;
   }
@@ -1056,15 +1056,39 @@
     return best;
   }
   function throwApple(){
-    if (state.apples <= 0) { flash("Out of apples — find more 🍎"); return; }
+    if (state.apples <= 0) { flash(state.type==="apples" ? "No apples in the basket yet 🍎" : "Out of apples — find more 🍎"); return; }
     if (peter.hasRope){ flash("Carrying the rope — drop it first (Q)"); return; }
     const e = aimTarget();
     let ang = peter.face>=0 ? 0 : Math.PI;
     if (e && !e.gone) ang = Math.atan2(e.y-peter.y, e.x-peter.x);
     state.apples--;
     const sp = 8.2;
-    projectiles.push({ x:peter.x, y:peter.y-8, vx:Math.cos(ang)*sp, vy:Math.sin(ang)*sp, spin:0, life:80 });
+    const p = { x:peter.x, y:peter.y-8, vx:Math.cos(ang)*sp, vy:Math.sin(ang)*sp, spin:0, life:80 };
+    // level 1: apples leave the basket in reverse order — the last one gathered flies first,
+    // and it must be fetched back before the sequence can continue
+    if (state.type==="apples"){ p.num = --state.nextApple; flash(`🍎 apple <b>${p.num}</b> flies — you'll have to fetch it back!`); }
+    projectiles.push(p);
     Audio.throwSfx();
+  }
+
+  // deflect a bouncing apple off a circle at (cx,cy) with radius R, damping its speed
+  function bounceOff(p, cx, cy, R){
+    let nx=p.x-cx, ny=p.y-cy; const m=Math.hypot(nx,ny)||1; nx/=m; ny/=m;
+    const dot=p.vx*nx+p.vy*ny;
+    if (dot<0){ p.vx-=2*dot*nx; p.vy-=2*dot*ny; }
+    p.vx*=0.5; p.vy*=0.5;
+    p.x=cx+nx*(R+2); p.y=cy+ny*(R+2);
+    p.life=Math.min(p.life,28);
+  }
+
+  // a thrown numbered apple comes to rest and rejoins the meadow as a pickup
+  function landApple(p){
+    const a = apples.find(a=>a.num===p.num);
+    if (!a) return;
+    const spot={ x:clamp(p.x,20,world.w-20), y:clamp(p.y,20,world.h-20), r:14 };
+    resolve(spot);
+    a.x=spot.x; a.y=spot.y; a.got=false; a.hintCd=0; a.noScore=true;
+    burst(a.x, a.y-4, 6, ["#e25a44","#ffd45e"], 1.6, 20, 0.03);
   }
 
   // Peter's whistle: calls a friend to him from afar — but the wolf hears it too
@@ -1095,10 +1119,12 @@
       cat.tx=peter.x+rand(-40,40); cat.ty=peter.y+rand(-40,40); }
   }
 
-  function tryTrap(){                            // level 1 rope-at-oak
-    if (!trap || !trap.armed) return;
-    if (dist(wolf.x,wolf.y,trap.x,trap.y) < trap.r+wolf.r && dist(peter.x,peter.y,trap.x,trap.y) < 90) springTrap(winCapture);
-    else if (dist(peter.x,peter.y,trap.x,trap.y) < 90) flash("Lure the wolf under the snare, then Space!");
+  function tryTrap(){                            // level 1 rope-at-oak — returns true if it consumed the press
+    if (!trap || !trap.armed) return false;
+    if (dist(peter.x,peter.y,trap.x,trap.y) >= 90) return false;
+    if (dist(wolf.x,wolf.y,trap.x,trap.y) < trap.r+wolf.r) springTrap(winCapture);
+    else flash("Lure the wolf under the snare, then Space!");
+    return true;
   }
 
   function ropeAction(){                          // level 4 context action — returns true if it consumed the press
@@ -1313,10 +1339,24 @@
     for (const p of projectiles){
       p.x+=p.vx; p.y+=p.vy; p.vy+=0.05; p.spin+=0.35; p.life--;
       const e = state.type==="endless" ? nearestWolf(p.x,p.y) : aimTarget();
-      if (e && !e.gone && Math.hypot(p.x-e.x,p.y-e.y) < e.r+9){ e.stun=STUN; e.crouch=0; e.pounce=0; p.dead=true; Audio.thud();
-        burst(p.x, p.y, 14, ["#c43d2e","#e25a44","#f7e58a"], 3, 36, 0.08); state.shake=Math.max(state.shake,3);
-        flash("🍎 splat! frozen"); }
-      if (p.life<=0 || blockedAt(p.x,p.y,4) || p.x<0||p.y<0||p.x>world.w||p.y>world.h) p.dead=true;
+      if (e && !e.gone && Math.hypot(p.x-e.x,p.y-e.y) < e.r+9){
+        if (!p.num){ e.stun=STUN; e.crouch=0; e.pounce=0; p.dead=true; Audio.thud();
+          burst(p.x, p.y, 14, ["#c43d2e","#e25a44","#f7e58a"], 3, 36, 0.08); state.shake=Math.max(state.shake,3);
+          flash("🍎 splat! frozen"); }
+        else {                                     // numbered apples bounce off the wolf and survive
+          if (!p.stunned){ p.stunned=true; e.stun=STUN; e.crouch=0; e.pounce=0; Audio.thud();
+            burst(p.x, p.y, 14, ["#c43d2e","#e25a44","#f7e58a"], 3, 36, 0.08); state.shake=Math.max(state.shake,3);
+            flash(`🍎 bonk! the wolf is frozen — now fetch apple <b>${p.num}</b> back`); }
+          bounceOff(p, e.x, e.y, e.r+9);
+        }
+      }
+      if (p.num){                                  // bounce off trees, rocks and the meadow's edge
+        for (const o of obstacles) if (Math.hypot(p.x-o.x,p.y-o.y) < o.r+6){ bounceOff(p, o.x, o.y, o.r+6); Audio.thud(); break; }
+        if (p.x<8||p.x>world.w-8){ p.vx=-p.vx*0.5; p.x=clamp(p.x,8,world.w-8); p.life=Math.min(p.life,28); }
+        if (p.y<8||p.y>world.h-8){ p.vy=-p.vy*0.5; p.y=clamp(p.y,8,world.h-8); p.life=Math.min(p.life,28); }
+        if (p.life<=0 || Math.hypot(p.vx,p.vy)<0.7){ landApple(p); p.dead=true; }
+      }
+      else if (p.life<=0 || blockedAt(p.x,p.y,4) || p.x<0||p.y<0||p.x>world.w||p.y>world.h) p.dead=true;
     }
     projectiles = projectiles.filter(p=>!p.dead);
 
@@ -1329,7 +1369,7 @@
           continue;
         }
         a.got=true; if (a.num) state.nextApple++;
-        state.apples++; state.score+=50; Audio.pickup();
+        state.apples++; if (!a.noScore) state.score+=50; Audio.pickup();
         burst(a.x, a.y-4, 10, ["#ffd45e","#fff3c4","#e25a44"], 2.2, 28, 0.03);
         flash(a.ammo ? "🍎 picked up (ammo)" : a.num ? `🍎 apple ${a.num}!` : "🍎 +1"); }
     }
@@ -1413,6 +1453,7 @@
     if (duck.dive>0.2) duck.preen=0;
     if (!trap.armed && state.apples>=state.need){ trap.armed=true; ropeToss={ t:0, x:oak.x-26, y:oak.y+34 };  // the coil by the oak flips up over the branch
       flash("All apples! Snare the wolf under the oak (Space) — or flee home 🏡"); }
+    else if (trap.armed && state.apples<state.need) trap.armed=false;   // a thrown apple undoes the harvest
 
     const d=dist(peter.x,peter.y,wolf.x,wolf.y);
     const hbush=hidingBush(peter);
@@ -2226,6 +2267,15 @@
     ctx.fillStyle="#e25a44"; ctx.beginPath(); ctx.arc(-2,-2,2,0,7); ctx.fill();
     ctx.fillStyle="#4f8a45"; ctx.beginPath(); ctx.ellipse(3,-6,3,1.5,0.6,0,7); ctx.fill();
     ctx.restore();
+    if (p.num){
+      ctx.save(); ctx.translate(p.x,p.y);
+      ctx.fillStyle="rgba(255,255,255,.85)"; ctx.strokeStyle="rgba(40,30,20,.55)"; ctx.lineWidth=1.5;
+      ctx.beginPath(); ctx.arc(0,-15,7,0,7); ctx.fill(); ctx.stroke();
+      ctx.fillStyle="#3a2a1a"; ctx.font="bold 10px 'Segoe UI', sans-serif";
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText(p.num, 0, -14.5);
+      ctx.restore();
+    }
   }
 
   function drawPond(p){

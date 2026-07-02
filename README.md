@@ -143,6 +143,13 @@ as a folder if you prefer not to use the portable exe.
    the sequence glows gold, the HUD shows which number is next, and it shines as a
    brighter gold dot on the minimap. Touching the wrong apple does nothing but a
    gentle reminder.
+   - **Throwing on the Meadow**: `Space` hurls an apple at the wolf — but apples
+     leave the basket in **reverse order** (the last one gathered flies first). A
+     hit **stuns the wolf** and the apple **bounces off** in the direction of the
+     throw; a miss ricochets off **trees, rocks and the meadow's edge** instead.
+     Wherever it comes to rest, it lies waiting with its number — and must be
+     **fetched back in order** before the harvest is complete. Throwing below the
+     full count also lets the oak snare back down until the basket is full again.
 2. Then choose your ending:
    - **Escape** — slip home through the **gate** on the right, *or*
    - **Hero's ending** — once the apples are gathered, the rope flips up **over the
