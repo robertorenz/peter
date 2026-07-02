@@ -961,6 +961,26 @@
     moveToward(ent, tx, ty, ent.speed*factor);
   }
 
+  // a predator with real eyes: ambles about until the prey wanders into its view
+  // distance, spots it (❗), and chases a touch faster — losing the trail if the
+  // prey slips far enough away again.
+  function stalk(ent, prey, seeR, factor){
+    if (ent.spot>0) ent.spot--;
+    if (ent.stun>0){ ent.mode="patrol"; chase(ent, prey.x, prey.y, factor); return; }   // chase ticks the stun down
+    const d = dist(ent.x,ent.y,prey.x,prey.y);
+    if (ent.mode!=="hunt"){
+      if (d < seeR){ ent.mode="hunt"; ent.spot=34; Audio.growl(); }
+      else {
+        if (ent.tx===undefined || dist(ent.tx,ent.ty,ent.x,ent.y)<24 || state.t%170===0){
+          ent.tx=rand(60,world.w-60); ent.ty=rand(60,world.h-60);
+        }
+        moveToward(ent, ent.tx, ent.ty, ent.speed*0.7);
+        return;
+      }
+    } else if (d > seeR*1.7){ ent.mode="patrol"; return; }
+    chase(ent, prey.x, prey.y, factor);
+  }
+
   function updateApples(moving, sneaking){
     // duck swims (decor)
     duck.ang+=0.012; duck.x=pond.x+Math.cos(duck.ang)*pond.rx*0.55; duck.y=pond.y+Math.sin(duck.ang)*pond.ry*0.5;
@@ -1004,13 +1024,13 @@
         bird.hop+=0.3;
       }
     }
-    // the cat hunts the bird
-    if (!bird.safe) chase(cat, bird.x, bird.y, 1.0);
+    // the cat prowls with its own eyes — it must spot the bird before it can hunt it
+    if (!bird.safe) stalk(cat, bird, 235, 1.12);
     if (state.invuln<=0 && !bird.safe && dist(cat.x,cat.y,bird.x,bird.y) < cat.r+10){ bird.gone=true; return lose("bird"); }
     if (bird.safe) return winBird();
 
     const dw=dist(cat.x,cat.y,bird.x,bird.y);
-    setMeter(clamp(100-(dw-26)/2.0,0,100), cat.stun>0?"The cat is frozen! ❄":(dw<120?"⚠ The cat is closing on the bird!":"Danger to the bird"));
+    setMeter(clamp(100-(dw-26)/2.0,0,100), cat.stun>0?"The cat is frozen! ❄":cat.mode!=="hunt"?"The cat prowls, unaware of the bird…":(dw<120?"⚠ The cat is closing on the bird!":"⚠ The cat has spotted the bird!"));
     state.objective = bird.following ? "Lead the bird to the tall tree!" : "Reach the bird so it follows you";
   }
 
@@ -1026,12 +1046,12 @@
         if (sp>0) moveToward(duck,tx,ty,sp); else { duck.vx*=0.8; duck.vy*=0.8; duck.x+=duck.vx; duck.y+=duck.vy; resolve(duck); }
       }
     }
-    if (!wolfSlinks() && !duck.safe) chase(wolf, duck.x, duck.y, 1.0);
+    if (!wolfSlinks() && !duck.safe) stalk(wolf, duck, 265, 1.1);
     if (state.invuln<=0 && !duck.safe && dist(wolf.x,wolf.y,duck.x,duck.y) < wolf.r+9){ duck.gone=true; return lose("duck"); }
     if (duck.safe) return winDuck();
 
     const dw=dist(wolf.x,wolf.y,duck.x,duck.y);
-    setMeter(clamp(100-(dw-28)/2.2,0,100), wolf.slink>0?"🏹 Hunters near — the wolf slinks away!":wolf.stun>0?"The wolf is frozen! ❄":(dw<140?"⚠ The wolf is upon the duck!":"Danger to the duck"));
+    setMeter(clamp(100-(dw-28)/2.2,0,100), wolf.slink>0?"🏹 Hunters near — the wolf slinks away!":wolf.stun>0?"The wolf is frozen! ❄":wolf.mode!=="hunt"?"The wolf prowls, unaware of the duck…":(dw<140?"⚠ The wolf is upon the duck!":"⚠ The wolf has spotted the duck!"));
     state.objective = duck.following ? "Lead the duck to the pond →" : "Reach the duck so it follows you";
   }
 
@@ -1341,13 +1361,15 @@
     if (w.stun>0) drawZzz(x,y);
     if (w.crouch>0){ ctx.save(); ctx.fillStyle="#ffd45e"; ctx.font="bold 20px Segoe UI"; ctx.textAlign="center";
       ctx.globalAlpha=0.6+0.4*Math.sin(state.t*0.5); ctx.fillText("❗", x, y-32); ctx.restore(); }
+    else if (w.spot>0){ ctx.save(); ctx.fillStyle="#ffd45e"; ctx.font="bold 20px Segoe UI"; ctx.textAlign="center";
+      ctx.globalAlpha=Math.min(1,w.spot/12); ctx.fillText("❗", x, y-32); ctx.restore(); }
   }
 
   // the wolf's body in local coords (origin at its chest) — shared by the walking
   // sprite and the upside-down "hoisted by the tail" pose in the capture scene
   function drawWolfBody(w){
     const slinking = w.slink>0;
-    const hunting = w.stun<=0 && !captureAnim && !slinking && (w.mode==="hunt"||state.type!=="apples");
+    const hunting = w.stun<=0 && !captureAnim && !slinking && (w.mode==="hunt"||state.type==="rope");
     const top = w.stun>0 ? "#9198a3" : hunting?"#686d76":"#797e87";
     const bot = w.stun>0 ? "#6f7580" : hunting?"#454951":"#54585f";
     const sw=Math.sin(w.step*1.1)*5;
@@ -1484,6 +1506,8 @@
     ctx.beginPath(); ctx.moveTo(19,-6.5); ctx.lineTo(26.5,-8); ctx.moveTo(19,-5.5); ctx.lineTo(27,-5.5); ctx.moveTo(19,-4.6); ctx.lineTo(26,-3); ctx.stroke();
     ctx.restore();
     if (c.stun>0) drawZzz(x,y);
+    else if (c.spot>0){ ctx.save(); ctx.fillStyle="#ffd45e"; ctx.font="bold 18px Segoe UI"; ctx.textAlign="center";
+      ctx.globalAlpha=Math.min(1,c.spot/12); ctx.fillText("❗", x, y-30); ctx.restore(); }
   }
 
   function drawDuck(){

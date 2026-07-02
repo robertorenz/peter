@@ -73,6 +73,10 @@ as a folder if you prefer not to use the portable exe.
 - **The wolf fears the hunters**: when the patrol wanders near, the wolf breaks off
   whatever it's doing and slinks away, tail tucked between its legs — use the moment
   to breathe (or to set your trap).
+- **Predators hunt with their eyes**: on the rescue levels the cat and the wolf amble
+  about until the bird or duck actually wanders into view — then a ❗ flashes, they
+  give chase a little faster, and they lose the trail again if their prey slips far
+  enough away. A stunned predator forgets what it saw.
 - Particles, screen shake and hurt-blinks make every splat, pickup and close call land.
 
 ## 🎯 How to win
