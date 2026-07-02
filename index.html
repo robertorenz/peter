@@ -439,7 +439,7 @@
   // ---- ambient life: sun patches, cloud shadows, butterflies ----
   let patches = [], clouds = [], butterflies = [];
   function buildAmbient(){
-    patches = []; clouds = []; butterflies = [];
+    patches = []; clouds = []; butterflies = []; dragonflies = [];
     for (let i=0;i<8;i++) patches.push({ x:rand(0,world.w), y:rand(0,world.h), r:rand(90,220) });
     for (let i=0;i<5;i++) clouds.push({ x:rand(0,world.w), y:rand(0,world.h), r:rand(90,170),
       spd:rand(0.10,0.22), squash:rand(0.45,0.62) });
@@ -451,6 +451,49 @@
         butterflies.push({ x:home.x, y:home.y-8, ph:rand(0,7), s1:rand(0.7,1.3), s2:rand(0.7,1.3),
           c:["#e8894a","#e3b23c","#8fb7e8","#f2ede0","#d98cd0"][(Math.random()*5)|0] });
       }
+      const nd = Math.min(4, Math.max(2, Math.round(world.w*world.h/400000)));
+      for (let i=0;i<nd;i++){
+        const x=rand(60,world.w-60), y=rand(60,world.h-60);
+        dragonflies.push({ x, y, tx:x, ty:y, ph:rand(0,7), hover:rand(60,160),
+          c:["#3fb8c9","#c95a3f","#6fae5f"][(Math.random()*3)|0] });
+      }
+    }
+  }
+  // dragonflies hover, then dart — a little pond-skimmer state machine
+  let dragonflies = [];
+  function updateDragonflies(){
+    for (const d of dragonflies){
+      if (d.hover>0){ d.hover--;
+        d.x += Math.sin(state.t*0.31+d.ph)*0.5; d.y += Math.cos(state.t*0.27+d.ph*2)*0.4;
+        if (d.hover<=0){
+          const a=rand(0,7), r=rand(110,260);
+          d.tx=clamp(d.x+Math.cos(a)*r, 40, world.w-40); d.ty=clamp(d.y+Math.sin(a)*r*0.6, 40, world.h-40);
+        }
+      } else {
+        const dx=d.tx-d.x, dy=d.ty-d.y, m=Math.hypot(dx,dy);
+        if (m<6){ d.hover=rand(70,200); }
+        else { d.x += dx/m*Math.min(m*0.14,6.5); d.y += dy/m*Math.min(m*0.14,6.5); }
+      }
+    }
+  }
+  function drawDragonflies(){
+    for (const d of dragonflies){
+      const dashing = d.hover<=0;
+      const ang = dashing ? Math.atan2(d.ty-d.y, d.tx-d.x) : Math.sin(state.t*0.02+d.ph)*0.2;
+      ctx.save(); ctx.translate(d.x, d.y + (dashing?0:Math.sin(state.t*0.15+d.ph)*1.5));
+      ctx.rotate(ang); ctx.scale(0.8,0.8);
+      // wing shimmer: two pairs, very fast, translucent
+      const wf = Math.sin(state.t*1.3+d.ph)*0.5+0.5;
+      ctx.fillStyle="rgba(235,248,255,.38)";
+      ctx.beginPath(); ctx.ellipse(-1,-3-3*wf,7.5,2.1,-0.5,0,7); ctx.ellipse(-1, 3+3*wf,7.5,2.1, 0.5,0,7); ctx.fill();
+      ctx.fillStyle="rgba(235,248,255,.26)";
+      ctx.beginPath(); ctx.ellipse(-4,-3-3*(1-wf),6.5,1.8,-0.6,0,7); ctx.ellipse(-4, 3+3*(1-wf),6.5,1.8, 0.6,0,7); ctx.fill();
+      // long body + head
+      ctx.strokeStyle=d.c; ctx.lineWidth=1.8; ctx.lineCap="round";
+      ctx.beginPath(); ctx.moveTo(2,0); ctx.lineTo(-10,0); ctx.stroke();
+      ctx.fillStyle=d.c; ctx.beginPath(); ctx.ellipse(2,0,2.6,2,0,0,7); ctx.fill();
+      ctx.fillStyle="#26303a"; ctx.beginPath(); ctx.arc(4.6,0,1.4,0,7); ctx.fill();
+      ctx.restore();
     }
   }
   function drawCloudShadows(){
@@ -479,6 +522,41 @@
       ctx.fillStyle="rgba(40,40,52,.9)"; ctx.beginPath(); ctx.ellipse(0.6,0,2.6,1,0,0,7); ctx.fill();
       ctx.restore();
     }
+  }
+
+  // ---- an occasional dove glides across the meadow ----
+  let dove = null;
+  function updateDove(){
+    if (!dove){
+      if (Math.random() < 1/1100){                      // every ~18s on average
+        const dir = Math.random()<0.5 ? 1 : -1;
+        dove = { dir, t:0, x: dir>0 ? cam.x-40 : cam.x+W+40, y: cam.y + rand(50, H*0.45), spd: rand(2.2,3.0) };
+      }
+      return;
+    }
+    dove.t++; dove.x += dove.dir*dove.spd;
+    if (dove.t>90 && (dove.x < cam.x-90 || dove.x > cam.x+W+90)) dove = null;
+  }
+  function drawDove(){
+    if (!dove) return;
+    const x=dove.x, y=dove.y + Math.sin(dove.t*0.08)*5;
+    const flap=Math.sin(dove.t*0.38);
+    ctx.fillStyle="rgba(20,30,20,.10)"; ctx.beginPath(); ctx.ellipse(x,y+52,10,3,0,0,7); ctx.fill();
+    ctx.save(); ctx.translate(x,y); ctx.scale(dove.dir,1);
+    // far wing (shaded, beats opposite)
+    ctx.fillStyle="#cfccc2"; ctx.beginPath(); ctx.moveTo(-1,-1);
+    ctx.quadraticCurveTo(-8,-1+flap*9, -14,1+flap*13); ctx.quadraticCurveTo(-7,4+flap*5, -1,2); ctx.closePath(); ctx.fill();
+    // tail fan + body + head
+    ctx.fillStyle="#f4f2ea";
+    ctx.beginPath(); ctx.moveTo(-7,0); ctx.lineTo(-15,-3.5+flap*1.5); ctx.lineTo(-14,2.5); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0,0,8.5,4.6,0,0,7); ctx.fill();
+    ctx.beginPath(); ctx.arc(8,-3,3.6,0,7); ctx.fill();
+    ctx.fillStyle="#e6a23c"; ctx.beginPath(); ctx.moveTo(11,-3.6); ctx.lineTo(14.6,-2.7); ctx.lineTo(11,-1.8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle="#26303a"; ctx.beginPath(); ctx.arc(8.8,-3.4,0.9,0,7); ctx.fill();
+    // near wing
+    ctx.fillStyle="#ffffff"; ctx.beginPath(); ctx.moveTo(1,-2);
+    ctx.quadraticCurveTo(6,-3-flap*11, 12,-2-flap*16); ctx.quadraticCurveTo(5,3-flap*5, 0,2); ctx.closePath(); ctx.fill();
+    ctx.restore();
   }
 
   let flies = [];   // fireflies for the night level
@@ -536,7 +614,7 @@
     state.level=idx; state.type=L.type; state.alert=0; state.apples=0;
     state.t=0; state.invuln=70; state.won=false; state.phase=""; projectiles=[];
     obstacles=[]; apples=[]; pond=oak=gate=trap=rope=cat=grandpa=null; duck=bird=null;
-    state.hearts=3; state.shake=0; particles=[]; flies=[]; captureAnim=null; ropeToss=null;
+    state.hearts=3; state.shake=0; particles=[]; flies=[]; dove=null; captureAnim=null; ropeToss=null;
     lvlNum.textContent = idx+1; lvlName.textContent = L.name;
     updateHearts();
 
@@ -548,8 +626,8 @@
     state.scroll = world.w > W || world.h > H;
     scatterDecor(Math.round(world.w*world.h/16000));
     buildAmbient();
-    if (PALETTES[state.level].night)
-      for (let i=0;i<26;i++) flies.push({ x:rand(40,world.w-40), y:rand(40,world.h-40), ph:rand(0,7) });
+    const nFlies = PALETTES[state.level].flies || 0;
+    for (let i=0;i<nFlies;i++) flies.push({ x:rand(40,world.w-40), y:rand(40,world.h-40), ph:rand(0,7) });
     centerCamera();
   }
 
@@ -775,6 +853,8 @@
     if (state.invuln>0) state.invuln--;
     if (state.shake>0.2) state.shake*=0.86; else state.shake=0;
     updateParticles();
+    updateDove();
+    updateDragonflies();
     if (ropeToss){ ropeToss.t++; if (ropeToss.t>60) ropeToss=null; }
 
     // Peter
@@ -968,8 +1048,8 @@
   const PALETTES = [
     { top:"#79b566", bot:"#578f48", tint:null },
     { top:"#93bc60", bot:"#6f963f", tint:"rgba(255,180,70,.10)" },
-    { top:"#5f9a74", bot:"#42775a", tint:"rgba(45,70,130,.16)" },
-    { top:"#42704f", bot:"#2e523c", tint:"rgba(8,18,48,.30)", night:true },
+    { top:"#5f9a74", bot:"#42775a", tint:"rgba(45,70,130,.16)", flies:14 },
+    { top:"#42704f", bot:"#2e523c", tint:"rgba(8,18,48,.30)", night:true, flies:26 },
   ];
 
   function draw(){
@@ -1009,8 +1089,10 @@
 
     for (const p of projectiles) drawProjectile(p);
     drawButterflies();
+    drawDragonflies();
     drawParticles();
-    if (PALETTES[state.level].night) drawFireflies();
+    if (flies.length) drawFireflies();
+    drawDove();
     ctx.restore();
 
     // atmosphere: soft sun shafts on the day levels (screen space)

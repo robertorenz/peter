@@ -62,8 +62,9 @@ as a folder if you prefer not to use the portable exe.
   blue dusk, and a night forest full of fireflies.
 - **A living meadow**: cloud shadows drift across the grass, soft sun shafts and sunlit
   patches warm the day levels, wind waves ripple through swaying grass and real petaled
-  flowers, butterflies flutter between blooms, pollen floats in the light, and the pond
-  glitters around a drifting lily pad.
+  flowers, butterflies flutter between blooms, dragonflies hover and dart, pollen floats
+  in the light, an occasional dove glides overhead, fireflies wink at dusk and by night,
+  and the pond glitters around a drifting lily pad.
 - **Character acting**: Peter blinks and his cap tassel swings as he runs, the wolf's
   ear flicks and its hunting eye pulses red, and both kick up little dust puffs at full
   speed.
