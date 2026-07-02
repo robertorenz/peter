@@ -48,7 +48,7 @@ as a folder if you prefer not to use the portable exe.
 | Photo mode (hide the HUD) | `H` |
 | Pause | `P` |
 | Mute / unmute | `M` |
-| **Touch screens** | drag the **left half** to walk, tap the **right half** to act |
+| **Touch screens** | drag the **left half** to walk, tap the **right half** to act; edge buttons **🤫 tip-toe** (toggle, glows gold while on) and **♪ whistle** |
 
 ## ✨ Game feel
 

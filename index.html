@@ -177,7 +177,8 @@
             <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> ·
             <kbd>Shift</kbd> tip-toe · <kbd>Space</kbd> throw apple / search / trap / shake tree ·
             <kbd>E</kbd> whistle.<br>
-            On touch screens: drag the left half to walk, tap the right half to act.
+            On touch screens: drag the left half to walk, tap the right half to act,
+            and use the edge buttons — 🤫 toggles tip-toe, ♪ whistles.
           </p>
           <p class="keys"><label style="cursor:pointer"><input type="checkbox" id="narrateChk" style="vertical-align:-2px"> 🔊 read the story aloud between chapters</label></p>
           <button class="btn" id="startBtn">Begin the tale</button>
@@ -383,11 +384,25 @@
   // touch: drag the left side of the screen to move, tap the right side to act
   const canvasPos = (e) => { const r=cv.getBoundingClientRect();
     return { x:(e.clientX-r.left)*W/r.width, y:(e.clientY-r.top)*H/r.height }; };
+  // corner buttons for the keyboard-only moves: tip-toe toggle + whistle
+  let touchSneak = false, touchSeen = matchMedia("(pointer: coarse)").matches;
+  const touchBtns = [
+    { id:"sneak",   glyph:"🤫", label:"tip-toe", x:W-46, y:H-330, r:26 },
+    { id:"whistle", glyph:"♪",  label:"whistle", x:W-46, y:H-266, r:26 },
+  ];
+  const touchBtnAt = (x,y) => touchBtns.find(b => Math.hypot(x-b.x,y-b.y) < b.r+6);
   cv.addEventListener("pointerdown", (e) => {
     if (state.mode==="parade"){ endParade(); return; }
     if (state.mode==="bow"){ endBow(); return; }
     if (e.pointerType!=="touch") return;
+    touchSeen = true;
     const p = canvasPos(e);
+    const b = state.mode==="play" && touchBtnAt(p.x,p.y);
+    if (b){
+      if (b.id==="sneak"){ touchSneak=!touchSneak; flash(touchSneak ? "🤫 tip-toeing — quiet and slow" : "walking again"); }
+      else whistle();
+      e.preventDefault(); return;
+    }
     if (p.x < W*0.45) joy = { id:e.pointerId, ox:p.x, oy:p.y, dx:0, dy:0 };
     else doAction();
     e.preventDefault();
@@ -1316,7 +1331,7 @@
     if (ropeToss){ ropeToss.t++; if (ropeToss.t>60) ropeToss=null; }
 
     // Peter
-    const sneaking = keys.sneak;
+    const sneaking = keys.sneak || touchSneak;
     const spd = (sneaking ? 1.8 : 3.15) * (peter.hasRope ? 0.85 : 1);   // the coil of rope is heavy
     let dx=(keys.right?1:0)-(keys.left?1:0), dy=(keys.down?1:0)-(keys.up?1:0);
     const moving=!!(dx||dy);
@@ -1850,6 +1865,23 @@
   // ---- touch controls (virtual joystick + action tap) ----
   let joy=null;
   function drawTouchUI(){
+    if (touchSeen && state.mode==="play"){
+      ctx.save();
+      for (const b of touchBtns){
+        const active = b.id==="sneak" && touchSneak;
+        const cooling = b.id==="whistle" && whistleCd>0;
+        ctx.globalAlpha = cooling ? 0.3 : 0.75;
+        ctx.fillStyle = active ? "rgba(217,164,65,.9)" : "rgba(20,30,38,.55)";
+        ctx.strokeStyle = "rgba(255,255,255,.5)"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,7); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = active ? "#2a1e08" : "#f4f1e8";
+        ctx.font = "22px 'Segoe UI', sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.fillText(b.glyph, b.x, b.y+1);
+        ctx.font = "bold 9px 'Segoe UI', sans-serif"; ctx.fillStyle="rgba(244,241,232,.8)";
+        ctx.fillText(b.label, b.x, b.y+b.r+9);
+      }
+      ctx.restore();
+    }
     if (!joy) return;
     ctx.save(); ctx.globalAlpha=0.4;
     ctx.strokeStyle="#fff"; ctx.lineWidth=2;
