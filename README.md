@@ -233,6 +233,22 @@ Both Peter and the wolf are drawn with shaded, gradient-lit sprites (rosy cheeks
 a tasseled cap for Peter; a two-tone muzzle, pointed ears, bushy tail and glowing eyes
 for the wolf) rather than flat shapes, to match the polish of the meadow scenery.
 
+## 🕹️ Commodore 64 port (Level 1)
+
+`c64/` holds a from-scratch 6502 assembly port of Level 1, **The Meadow**, for real
+C64 hardware (or VICE). Gather the numbered apples in order, whistle (FIRE) to stun
+the wolf, then escape through the gate on the right. Joystick in port 2.
+
+- **Run it:** load `c64/build/meadow.d64` (or `meadow.prg`) in VICE — `x64sc build\meadow.d64`.
+- **Tech:** Peter and the wolf are multicolor hardware sprites (the wolf X-expanded,
+  auto-mirrored for facing); apples, trees, pond and gate are a custom character set
+  overlaid on the ROM font; SID square-wave effects; raster-IRQ-synced 50 Hz game loop.
+- **Build:** `c64\build.ps1` — Python converts the ASCII sprite/char art in `c64/art/`
+  into dasm includes, [dasm](https://github.com/dasm-assembler/dasm) assembles
+  `meadow.asm` (drop `dasm.exe` into `c64/bin/`), and VICE's `c1541` packs the disk image.
+
+![C64 Meadow](c64/screenshot.png)
+
 ## 🛠️ Built with
 
 Plain HTML5 Canvas + a tiny WebAudio synth. No build step, no dependencies.

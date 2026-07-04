@@ -30,3 +30,10 @@ desktop/dist/
 desktop/index.html
 desktop/audio/
 desktop/package-lock.json
+
+# C64 port — toolchain download + build intermediates (the .prg/.d64 ARE versioned)
+c64/bin/
+c64/build/*.lst
+c64/build/*.sym
+c64/build/*.png
+c64/build/*.inc
