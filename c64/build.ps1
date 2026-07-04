@@ -6,9 +6,11 @@ param([switch]$Run)
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-# 1. art -> dasm includes
+# 1. art + music -> dasm includes
 py -3 tools\gen_assets.py
 if ($LASTEXITCODE -ne 0) { throw "asset generation failed" }
+py -3 tools\gen_music.py
+if ($LASTEXITCODE -ne 0) { throw "music generation failed" }
 
 # 2. assemble
 bin\dasm.exe meadow.asm -f1 "-obuild/meadow.prg" "-lbuild/meadow.lst" "-sbuild/meadow.sym"

@@ -240,9 +240,14 @@ C64 hardware (or VICE). Gather the numbered apples in order, whistle (FIRE) to s
 the wolf, then escape through the gate on the right. Joystick in port 2.
 
 - **Run it:** load `c64/build/meadow.d64` (or `meadow.prg`) in VICE — `x64sc build\meadow.d64`.
-- **Tech:** Peter and the wolf are multicolor hardware sprites (the wolf X-expanded,
-  auto-mirrored for facing); apples, trees, pond and gate are a custom character set
-  overlaid on the ROM font; SID square-wave effects; raster-IRQ-synced 50 Hz game loop.
+- **Tech:** Peter is a multicolor hardware sprite; the wolf is **two sprites side by
+  side** (48px of muzzle, ears, ridge back and raised tail, auto-mirrored for facing)
+  that hunts around obstacles; apples, trees, pond and gate are a custom character set
+  overlaid on the ROM font; raster-IRQ-synced 50 Hz game loop.
+- **Music:** Prokofiev on the SID — Peter's theme loops on voice 2 (pulse), and when
+  the wolf gets close his theme takes over (sawtooth) until you shake him off. The
+  note tables are generated from the same `tools/themes_js.json` leitmotifs the web
+  game uses. Sound effects run on voice 1.
 - **Build:** `c64\build.ps1` — Python converts the ASCII sprite/char art in `c64/art/`
   into dasm includes, [dasm](https://github.com/dasm-assembler/dasm) assembles
   `meadow.asm` (drop `dasm.exe` into `c64/bin/`), and VICE's `c1541` packs the disk image.

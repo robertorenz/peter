@@ -44,6 +44,10 @@ winFlag   equ $20
 rndSeed   equ $21
 newXLo    equ $22          ; candidate X while moving (getCell eats tmpLo)
 newXHi    equ $23
+musPtr    equ $24          ; ..$25 current music note pointer
+musTimer  equ $26
+musSong   equ $27          ; 0 = peter's theme, 1 = wolf's theme
+musWave   equ $28          ; SID waveform of the current song's voice
 colPtr    equ $f9          ; ..$fa color RAM pointer
 scrPtr    equ $fb          ; ..$fc screen RAM pointer
 txtPtr    equ $fd          ; ..$fe text pointer
@@ -148,12 +152,11 @@ initVic
 	sta $d020              ; black border
 	lda #13
 	sta $d021              ; light green meadow
-	lda #%00000011
-	sta $d015              ; enable sprites 0 (peter) + 1 (wolf)
-	sta $d01c              ; both multicolor
-	lda #%00000010
-	sta $d01d              ; wolf double width
+	lda #%00000111
+	sta $d015              ; sprites 0 (peter) + 1/2 (wolf front + rear)
+	sta $d01c              ; all multicolor
 	lda #0
+	sta $d01d              ; no expansion: the wolf is two real sprites
 	sta $d017
 	sta $d01b              ; sprites in front of chars
 	sta $d025              ; multicolor 1: black
@@ -163,6 +166,7 @@ initVic
 	sta $d027              ; peter: red
 	lda #11
 	sta $d028              ; wolf: dark grey
+	sta $d029
 	rts
 
 initSid
@@ -189,6 +193,7 @@ tick
 	inc frame
 	jsr readJoy
 	jsr sfxUpdate
+	jsr musicTick
 	lda state
 	beq tickPlay
 	; --- caught / escaped: wait for FIRE ---
@@ -525,7 +530,8 @@ whDone
 	rts
 
 ; ============================================================
-; wolf: walks straight at Peter (3 of every 4 frames)
+; wolf: hunts Peter but respects trees/rocks/water, sidestepping
+; around whatever blocks the straight line
 ; ============================================================
 moveWolf
 	lda stun
@@ -535,20 +541,117 @@ moveWolf
 mwGo
 	lda frame
 	and #1
-	beq mwDone             ; wolf moves every other frame: half peter's pace
-	; X axis: compare wolf to peter, 16 bit
+	bne mwMove             ; wolf moves every other frame: half peter's pace
+	rts
+mwMove
+	; ---- X axis ----
+	lda wolfXLo
+	cmp peterXLo
+	bne mwXmove
+	lda wolfXHi
+	cmp peterXHi
+	beq mwYAxis            ; same X
+mwXmove
+	lda wolfXLo
+	sta newXLo
+	lda wolfXHi
+	sta newXHi
 	lda wolfXLo
 	cmp peterXLo
 	lda wolfXHi
 	sbc peterXHi
 	bcc mwRight            ; wolf < peter
+	lda newXLo
+	sec
+	sbc #1
+	sta newXLo
+	lda newXHi
+	sbc #0
+	sta newXHi
+	lda #0
+	sta wolfFace
+	jmp mwXtry
+mwRight
+	inc newXLo
+	bne mwFaceR
+	inc newXHi
+mwFaceR
+	lda #1
+	sta wolfFace
+mwXtry
+	; wolf centre foot cell: getCell expects centre+12 like peter
+	lda newXLo
+	clc
+	adc #36
+	sta tmpLo
+	lda newXHi
+	adc #0
+	sta tmpHi
+	lda wolfY
+	jsr getCell
+	jsr checkBlockedWolf
+	bcs mwXblocked
+	lda newXLo
+	sta wolfXLo
+	lda newXHi
+	sta wolfXHi
+	jmp mwYAxis
+mwXblocked
+	; something in the way and already level with peter: sidestep
+	lda wolfY
+	cmp peterY
+	bne mwYAxis
+	cmp #128
+	bcs mwSideUp
+	inc wolfY
+	rts
+mwSideUp
+	dec wolfY
+	rts
+mwYAxis
+	lda wolfY
+	cmp peterY
+	beq mwDone
+	bcc mwDown
+	lda wolfY
+	sec
+	sbc #1
+	jmp mwYtry
+mwDown
+	lda wolfY
+	clc
+	adc #1
+mwYtry
+	sta tmp
+	lda wolfXLo
+	clc
+	adc #36
+	sta tmpLo
+	lda wolfXHi
+	adc #0
+	sta tmpHi
+	lda tmp
+	jsr getCell
+	jsr checkBlockedWolf
+	bcs mwYblocked
+	lda tmp
+	sta wolfY
+	rts
+mwYblocked
+	; blocked and vertically aligned: sidestep in X
 	lda wolfXLo
 	cmp peterXLo
-	bne mwLeft
+	bne mwDone
 	lda wolfXHi
 	cmp peterXHi
-	beq mwYAxis            ; same X
-mwLeft
+	bne mwDone
+	lda wolfXHi
+	bne mwSideL
+	inc wolfXLo
+	bne mwDone
+	inc wolfXHi
+	rts
+mwSideL
 	lda wolfXLo
 	sec
 	sbc #1
@@ -556,39 +659,49 @@ mwLeft
 	lda wolfXHi
 	sbc #0
 	sta wolfXHi
-	lda #0
-	sta wolfFace
-	jmp mwYAxis
-mwRight
-	inc wolfXLo
-	bne mwFaceR
-	inc wolfXHi
-mwFaceR
-	lda #2
-	sta wolfFace
-mwYAxis
-	lda wolfY
-	cmp peterY
-	beq mwDone
-	bcc mwDown
-	dec wolfY
-	rts
-mwDown
-	inc wolfY
 mwDone
 	rts
 
-checkCaught
-	; |dx| (16 bit) must be < 20, |dy| < 18
-	lda peterXLo
+; like checkBlocked but the gate is ALWAYS solid to the wolf
+; (and never sets winFlag)
+checkBlockedWolf
+	cmp #130
+	bcc cwClear
+	cmp #APPLE_CH
+	beq cwClear
+	cmp #CHAR_FIRST+CHAR_COUNT
+	bcc cwBlocked
+cwClear
+	clc
+	rts
+cwBlocked
 	sec
-	sbc wolfXLo
+	rts
+
+; |peter centre - wolf centre| -> tmpLo/Hi (16 bit)
+absDx
+	lda wolfXLo
+	clc
+	adc #24
+	sta newXLo
+	lda wolfXHi
+	adc #0
+	sta newXHi
+	lda peterXLo
+	clc
+	adc #12
 	sta tmpLo
 	lda peterXHi
-	sbc wolfXHi
+	adc #0
 	sta tmpHi
-	bpl ccAbsOk
-	; negate
+	lda tmpLo
+	sec
+	sbc newXLo
+	sta tmpLo
+	lda tmpHi
+	sbc newXHi
+	sta tmpHi
+	bpl adDone
 	lda #0
 	sec
 	sbc tmpLo
@@ -596,20 +709,29 @@ checkCaught
 	lda #0
 	sbc tmpHi
 	sta tmpHi
-ccAbsOk
-	lda tmpHi
-	bne ccDone
-	lda tmpLo
-	cmp #20
-	bcs ccDone
+adDone
+	rts
+
+; |peterY - wolfY| -> A
+absDy
 	lda peterY
 	sec
 	sbc wolfY
-	bpl ccDyOk
+	bpl adyDone
 	eor #$ff
 	clc
 	adc #1
-ccDyOk
+adyDone
+	rts
+
+checkCaught
+	jsr absDx
+	lda tmpHi
+	bne ccDone
+	lda tmpLo
+	cmp #26
+	bcs ccDone
+	jsr absDy
 	cmp #18
 	bcs ccDone
 	; caught!
@@ -634,17 +756,30 @@ updateSprites
 	sta $d000
 	lda peterY
 	sta $d001
+	; wolf: two sprites side by side, rear half at +24
 	lda wolfXLo
 	sta $d002
 	lda wolfY
 	sta $d003
-	; X MSBs
+	sta $d005
+	lda wolfXLo
+	clc
+	adc #24
+	sta $d004
+	lda wolfXHi
+	adc #0
+	and #1
+	asl
+	asl
+	sta tmp                ; sprite 2 MSB, in place
+	; X MSBs: bit0 peter, bit1 wolf front, bit2 wolf rear
 	lda peterXHi
 	and #1
-	sta tmp
+	sta tmpHi
 	lda wolfXHi
 	and #1
 	asl
+	ora tmpHi
 	ora tmp
 	sta $d010
 	; peter animation: walk cycle only while moving
@@ -657,16 +792,20 @@ updateSprites
 	inx
 usPeterSet
 	stx SCREEN+$3f8
-	; wolf animation + facing
+	; wolf pointers: base by facing, +4 for the second gait frame
 	lda frame
 	and #8
-	lsr
-	lsr
-	lsr                    ; 0 or 1
+	lsr                    ; 0 or 4
+	sta tmp
+	ldx wolfFace           ; 0=left 1=right
+	lda wolfBaseA,x
 	clc
-	adc wolfFace           ; +0 left frames, +2 right frames
-	adc #SPRBASE+2
+	adc tmp
 	sta SCREEN+$3f9
+	lda wolfBaseB,x
+	clc
+	adc tmp
+	sta SCREEN+$3fa
 	; stunned wolf flashes white
 	ldx #11
 	lda stun
@@ -677,6 +816,7 @@ usPeterSet
 	ldx #1
 usWolfCol
 	stx $d028
+	stx $d029
 	rts
 
 ; ============================================================
@@ -728,6 +868,107 @@ sfxEnd
 	lda #$40               ; gate off
 	sta $d404
 sfxDone
+	rts
+
+; ============================================================
+; music: Prokofiev's leitmotifs on voice 2.  Peter's theme
+; loops in the meadow; when the wolf gets close, his theme
+; takes over (with hysteresis so it doesn't flap).  Songs are
+; (freqLo,freqHi,dur) triplets, 0,0,0 = loop point.
+; ============================================================
+; X = song index -> point at its start and set its instrument
+musicSetup
+	lda songLo,x
+	sta musPtr
+	lda songHi,x
+	sta musPtr+1
+	lda musWaveTab,x
+	sta musWave
+	lda musAdTab,x
+	sta $d40c
+	lda #$a9               ; sustain/release
+	sta $d40d
+	lda #$02
+	sta $d40a              ; thin pulse for peter (harmless for saw)
+	rts
+
+musicStart
+	lda #0
+	sta musSong
+	tax
+	jsr musicSetup
+	lda #1                 ; fetch the first note on the next tick
+	sta musTimer
+	rts
+
+; which song does the wolf's distance call for? -> A (0/1)
+musicDesired
+	jsr absDx
+	lda tmpHi
+	bne mdFar
+	jsr absDy
+	sta tmp
+	ldx musSong            ; thresholds widen while his theme plays
+	lda tmpLo
+	cmp musDxThresh,x
+	bcs mdFar
+	lda tmp
+	cmp musDyThresh,x
+	bcs mdFar
+	lda #1
+	rts
+mdFar
+	lda #0
+	rts
+
+musicTick
+	lda state
+	beq mtPlay
+	lda musWave            ; caught/escaped: release the note so the
+	and #$fe               ; voice-1 jingle stands alone
+	sta $d40b
+	rts
+mtPlay
+	dec musTimer
+	bne mtRts
+mtFetch
+	jsr musicDesired
+	cmp musSong
+	beq mtSame
+	sta musSong
+	tax
+	jsr musicSetup         ; switch songs at the note boundary
+mtSame
+	ldy #2
+	lda (musPtr),y
+	bne mtNote
+	ldx musSong            ; hit the terminator: loop
+	jsr musicSetup
+	jmp mtFetch
+mtNote
+	sta musTimer
+	ldy #0
+	lda (musPtr),y
+	sta $d407
+	iny
+	lda (musPtr),y
+	sta $d408
+	tax                    ; X=0 means this entry is a rest
+	lda musPtr
+	clc
+	adc #3
+	sta musPtr
+	bcc mtGate
+	inc musPtr+1
+mtGate
+	lda musWave
+	and #$fe
+	sta $d40b              ; gate off (stays off for a rest)
+	cpx #0
+	beq mtRts
+	lda musWave
+	sta $d40b              ; retrigger
+mtRts
 	rts
 
 ; ============================================================
@@ -791,6 +1032,8 @@ blClrCol
 	sta wolfY
 	lda #11
 	sta $d028
+	sta $d029
+	jsr musicStart
 	jmp updateSprites
 
 ; ---- deterministic grass + flowers via 8-bit LFSR ----
@@ -1166,6 +1409,22 @@ sfxWhistle	dc.b 5,$68,6,$8c,0
 sfxBuzz	dc.b 10,$06,0
 sfxCaught	dc.b 8,$30,8,$24,8,$1a,12,$10,0
 sfxWin	dc.b 7,$40,7,$50,7,$60,14,$80,0
+
+; wolf sprite pointer bases, indexed by wolfFace (0=left 1=right)
+wolfBaseA	dc.b SPRBASE+2,SPRBASE+4   ; screen-left half
+wolfBaseB	dc.b SPRBASE+3,SPRBASE+5   ; screen-right half
+
+; music: song table + per-song instrument, indexed by musSong
+songLo	dc.b <songPeterData,<songWolfData
+songHi	dc.b >songPeterData,>songWolfData
+musWaveTab	dc.b $41,$21               ; peter pulse, wolf sawtooth
+musAdTab	dc.b $18,$28               ; wolf gets a slower attack
+; switch to the wolf's theme inside the small box, back to
+; peter's only outside the big one
+musDxThresh	dc.b 88,120
+musDyThresh	dc.b 80,112
+
+	include "build/music.inc"
 
 ; custom character bitmaps (copied over the ROM set at init)
 	include "build/chars.inc"
