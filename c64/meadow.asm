@@ -53,17 +53,21 @@ musPtr    equ $24          ; ..$25 current music note pointer
 musTimer  equ $26
 musSong   equ $27          ; 0 = peter's theme, 1 = wolf's theme
 musWave   equ $28          ; SID waveform of the current song's voice
-camCol    equ $2a          ; camera cell origin (0..88)
-camRow    equ $2b          ; (0..8)
-camXLo    equ $2c          ; camera pixel origin = camCol*8
+camCol    equ $2a          ; coarse origin of the BACK buffer (0..88)
+camRow    equ $2b          ; (0..7)
+camXLo    equ $2c          ; camera origin, PIXELS (0..704)
 camXHi    equ $2d
-camY      equ $2e          ; camRow*8 (0..64)
+camY      equ $2e          ; camera Y, pixels (0..56)
 visBuf    equ $2f          ; which screen is visible (0=$0400 1=$2c00)
 scrOff    equ $30          ; active screen page offset from $04xx
 flipReq   equ $31
 camMoved  equ $32
 seedLo    equ $34          ; 16-bit LFSR
 seedHi    equ $35
+peterDir  equ $38          ; 0=down 1=up 2=left 3=right
+visCX     equ $39          ; coarse origin of the VISIBLE buffer
+visCY     equ $3a
+tmp2      equ $3b
 mapP      equ $f5          ; ..$f6 world map pointer
 dstP      equ $f7          ; ..$f8 render destination
 colBufP   equ $36          ; ..$37 color buffer pointer (render + blast)
@@ -85,8 +89,11 @@ GATE_CH   equ 136
 N_APPLES  equ 5
 MAPW      equ 128
 MAPH      equ 32
-CAMCOLMAX equ MAPW-40
-CAMROWMAX equ MAPH-24
+HUDSPR    equ $2400        ; 5 border sprites carry the status text
+HUDPTR    equ $90          ; $2400/64
+CAMXMAXLO equ <704         ; camera pixel limit: world 1024 - 320 view
+CAMXMAXHI equ >704
+CAMYMAX   equ 56           ; world 256 - 200 (25 rendered rows)
 
 ; ============================================================
 	org $0801
@@ -96,6 +103,14 @@ CAMROWMAX equ MAPH-24
 start
 	sei
 	jsr copyCharset
+	; blank the HUD sprite block (glyphs only fill rows 0-7)
+	ldx #0
+	lda #0
+stHudClr
+	sta HUDSPR,x
+	sta HUDSPR+$100,x
+	inx
+	bne stHudClr
 	jsr initVic
 	jsr initSid
 	lda #0
@@ -139,10 +154,77 @@ mainloop
 	sta $d018
 	lda scrOffTab,x
 	sta scrOff
+	lda camCol             ; the back buffer's origin is live now
+	sta visCX
+	lda camRow
+	sta visCY
 	jsr colorBlast
 mlNoFlip
+	jsr fineScroll
 	jsr tick
 	jmp mainloop
+
+; ---- fine scroll: hardware-shift the visible buffer by the
+; sub-tile part of the camera position (still in border time) ----
+fineScroll
+	; fineX = clamp(camX - visCX*8, 0..7)
+	lda visCX
+	sta tmpLo
+	lda #0
+	sta tmpHi
+	asl tmpLo
+	rol tmpHi
+	asl tmpLo
+	rol tmpHi
+	asl tmpLo
+	rol tmpHi
+	lda camXLo
+	sec
+	sbc tmpLo
+	sta tmpLo
+	lda camXHi
+	sbc tmpHi
+	bmi fsX0               ; camera left of the visible origin
+	bne fsX7               ; 256+: render lag, clamp
+	lda tmpLo
+	cmp #8
+	bcc fsXok
+fsX7
+	lda #7
+	bne fsXok
+fsX0
+	lda #0
+fsXok
+	sta tmp
+	lda #7
+	sec
+	sbc tmp
+	ora #$c0               ; 38-column mode, multicolor off
+	sta $d016
+	; fineY = clamp(camY - visCY*8, 0..7)
+	lda visCY
+	asl
+	asl
+	asl
+	sta tmp
+	lda camY
+	sec
+	sbc tmp
+	bcc fsY0
+	cmp #8
+	bcc fsYok
+	lda #7
+	bne fsYok
+fsY0
+	lda #0
+fsYok
+	sta tmp
+	lda #7
+	sec
+	sbc tmp
+	ora #$10               ; screen on, 24-row mode, text mode
+	sta $d011
+	rts
 
 irq
 	lda $d019
@@ -199,9 +281,10 @@ initVic
 	sta $d020              ; black border
 	lda #13
 	sta $d021              ; light green meadow
+	lda #%11111111
+	sta $d015              ; 0 peter, 1/2 wolf, 3-7 border HUD
 	lda #%00000111
-	sta $d015              ; sprites 0 (peter) + 1/2 (wolf front + rear)
-	sta $d01c              ; all multicolor
+	sta $d01c              ; game sprites multicolor, HUD hires
 	lda #0
 	sta $d01d
 	sta $d017
@@ -214,6 +297,25 @@ initVic
 	lda #11
 	sta $d028              ; wolf: dark grey
 	sta $d029
+	; HUD sprites: fixed in the top border, white, 24px apart
+	ldx #4
+ivHud
+	lda #1
+	sta $d02a,x            ; colors of sprites 3-7
+	txa
+	asl
+	tay                    ; $d006+2n / $d007+2n
+	lda hudXTab,x
+	sta $d006,y
+	lda #57                ; floats over the top of the playfield
+	sta $d007,y            ; (the VIC blanks sprites in the border)
+	txa
+	clc
+	adc #HUDPTR
+	sta SCREENA+$3fb,x     ; pointers in both buffers
+	sta SCREENB+$3fb,x
+	dex
+	bpl ivHud
 	rts
 
 initSid
@@ -301,6 +403,32 @@ readJoy
 movePeter
 	lda #0
 	sta moving
+	; ---- facing: horizontal wins on diagonals ----
+	lda joy
+	and #%00001000
+	beq mpFaceL
+	lda #3                 ; right
+	bne mpFaceSet
+mpFaceL
+	lda joy
+	and #%00000100
+	beq mpFaceU
+	lda #2                 ; left
+	bne mpFaceSet
+mpFaceU
+	lda joy
+	and #%00000001
+	beq mpFaceD
+	lda #1                 ; up: show peter's back
+	bne mpFaceSet
+mpFaceD
+	lda joy
+	and #%00000010
+	beq mpFaceKeep
+	lda #0                 ; down: face the player
+mpFaceSet
+	sta peterDir
+mpFaceKeep
 	; ---- horizontal ----
 	lda peterXLo
 	sta newXLo
@@ -471,98 +599,124 @@ cwBlocked
 	rts
 
 ; ============================================================
-; camera: follow peter with a dead zone, stepping whole cells
+; camera: pixel-resolution dead-zone follow.  Fine motion is
+; free (hardware scroll registers); crossing an 8px boundary
+; re-renders the back buffer and queues a flip.
 ; ============================================================
 updateCamera
-	lda #0
-	sta camMoved
-	; peter's foot column
+	; ---- horizontal: keep peter's screen x inside [130..170] ----
 	lda peterXLo
-	clc
-	adc #12
+	sec
+	sbc camXLo
 	sta tmpLo
 	lda peterXHi
-	adc #0
-	lsr
-	ror tmpLo
-	lsr
-	ror tmpLo
-	lsr
-	ror tmpLo
+	sbc camXHi
+	bne ucFar              ; >255: way right of the window
 	lda tmpLo
+	cmp #130
+	bcs ucXHigh
+	; camX -= 2, floor 0
+	lda camXLo
 	sec
-	sbc camCol             ; screen column
-	cmp #16
-	bcs ucRight
-	lda camCol
-	beq ucRows
-	dec camCol
-	inc camMoved
-	jmp ucRows
-ucRight
-	cmp #24
-	bcc ucRows
-	lda camCol
-	cmp #CAMCOLMAX
-	bcs ucRows
-	inc camCol
-	inc camMoved
-ucRows
-	lda peterY
-	clc
-	adc #18
-	lsr
-	lsr
-	lsr
-	sec
-	sbc camRow             ; screen row
-	cmp #9
-	bcs ucDown
-	lda camRow
-	beq ucApply
-	dec camRow
-	inc camMoved
-	jmp ucApply
-ucDown
-	cmp #15
-	bcc ucApply
-	lda camRow
-	cmp #CAMROWMAX
-	bcs ucApply
-	inc camRow
-	inc camMoved
-ucApply
-	lda camMoved
-	beq ucDone
-	jsr camPixels
-	jsr renderView
-ucDone
-	rts
-
-camPixels
-	lda camCol
+	sbc #2
 	sta camXLo
-	lda #0
+	lda camXHi
+	sbc #0
 	sta camXHi
-	asl camXLo
-	rol camXHi
-	asl camXLo
-	rol camXHi
-	asl camXLo
-	rol camXHi
-	lda camRow
-	asl
-	asl
-	asl
+	bpl ucVert
+	lda #0
+	sta camXLo
+	sta camXHi
+	beq ucVert
+ucXHigh
+	cmp #171
+	bcc ucVert
+ucFar
+	; camX += 2, ceiling 704
+	lda camXLo
+	clc
+	adc #2
+	sta camXLo
+	lda camXHi
+	adc #0
+	sta camXHi
+	cmp #CAMXMAXHI
+	bcc ucVert
+	bne ucXCap
+	lda camXLo
+	cmp #CAMXMAXLO
+	bcc ucVert
+ucXCap
+	lda #CAMXMAXLO
+	sta camXLo
+	lda #CAMXMAXHI
+	sta camXHi
+ucVert
+	; ---- vertical: keep peter's screen y inside [72..120] ----
+	lda peterY
+	sec
+	sbc camY
+	bcc ucYLow             ; above the window
+	cmp #72
+	bcs ucYHigh
+ucYLow
+	lda camY
+	sec
+	sbc #2
+	bcs ucYSet
+	lda #0
+ucYSet
 	sta camY
+	jmp ucCoarse
+ucYHigh
+	cmp #121
+	bcc ucCoarse
+	lda camY
+	clc
+	adc #2
+	cmp #CAMYMAX
+	bcc ucYSet2
+	lda #CAMYMAX
+ucYSet2
+	sta camY
+ucCoarse
+	; did the camera cross a tile boundary? -> re-render
+	lda camXLo
+	sta tmpLo
+	lda camXHi
+	sta tmpHi
+	lsr tmpHi
+	ror tmpLo
+	lsr tmpHi
+	ror tmpLo
+	lsr tmpHi
+	ror tmpLo              ; tmpLo = camX>>3 (0..88)
+	lda camY
+	lsr
+	lsr
+	lsr
+	sta tmpHi              ; camY>>3 (0..7)
+	lda tmpLo
+	cmp camCol
+	bne ucRender
+	lda tmpHi
+	cmp camRow
+	bne ucRender
 	rts
+ucRender
+	lda tmpLo
+	sta camCol
+	lda tmpHi
+	sta camRow
+	jmp renderView
 
 ; ============================================================
 ; render the 40x24 view into the OFF-SCREEN buffer + color
 ; buffer, then request a flip.  Never touches the visible screen.
 ; ============================================================
 renderView
-	; dest = inactive screen, row 1
+	; dest = inactive screen, all 25 rows (the HUD lives in
+	; border sprites now, so the whole screen scrolls)
 	lda visBuf
 	eor #1
 	tax
@@ -570,7 +724,7 @@ renderView
 	clc
 	adc #>SCREENA
 	sta dstP+1
-	lda #40                ; skip the status row
+	lda #0
 	sta dstP
 	lda #<COLORBUF
 	sta colBufP
@@ -578,7 +732,7 @@ renderView
 	sta colBufP+1
 	lda camRow
 	sta tmp                ; current world row
-	ldx #24
+	ldx #25
 rvRow
 	txa
 	pha
@@ -627,11 +781,11 @@ colorBlast
 	sta colBufP
 	lda #>COLORBUF
 	sta colBufP+1
-	lda #<(COLRAM+40)
+	lda #<COLRAM
 	sta colPtr
-	lda #>(COLRAM+40)
+	lda #>COLRAM
 	sta colPtr+1
-	ldx #24
+	ldx #25
 cbRow
 	ldy #39
 cbCell
@@ -744,11 +898,11 @@ cpCollect
 	inc gateOpen
 	lda #7                 ; the gate lights up yellow
 	sta COLTAB+GATE_CH
-	lda #<statusB          ; "GATE OPEN! RUN RIGHT"
-	ldy #>statusB
-	jsr drawStatus
+	lda #<hudGate          ; "GO EAST!"
+	ldy #>hudGate
+	jsr renderHud
 cpRedraw
-	jsr drawStatusDigits
+	jsr updateHudDigits
 	jmp renderView
 
 ; ============================================================
@@ -984,6 +1138,8 @@ ccDone
 ; sprites -> VIC registers (world - camera = screen)
 ; ============================================================
 updateSprites
+	; screen = world - camera + K, where K absorbs the fine-
+	; scroll register convention: +31 in x, +54 in y
 	; ---- peter (always on screen: the camera follows him) ----
 	lda peterXLo
 	sec
@@ -994,7 +1150,7 @@ updateSprites
 	sta tmpHi
 	lda tmpLo
 	clc
-	adc #24
+	adc #31
 	sta $d000
 	lda tmpHi
 	adc #0
@@ -1004,7 +1160,7 @@ updateSprites
 	sec
 	sbc camY
 	clc
-	adc #50
+	adc #54
 	sta $d001
 	; ---- wolf: visible only when his window overlaps the view ----
 	lda wolfXLo
@@ -1019,23 +1175,23 @@ updateSprites
 	cmp #1
 	bne usWolfHide         ; 512+ px away
 	lda newXLo
-	cmp #41
+	cmp #34
 	bcs usWolfHide         ; too far right
 usWolfY
 	lda wolfY
 	sec
 	sbc camY
 	bcc usWolfHide         ; above the view
-	cmp #172
+	cmp #168
 	bcs usWolfHide         ; below it
 	clc
-	adc #50
+	adc #54
 	sta $d003
 	sta $d005
 	; front half x
 	lda newXLo
 	clc
-	adc #24
+	adc #31
 	sta $d002
 	lda newXHi
 	adc #0
@@ -1046,7 +1202,7 @@ usWolfY
 	; rear half x = +24 more
 	lda newXLo
 	clc
-	adc #48
+	adc #55
 	sta $d004
 	lda newXHi
 	adc #0
@@ -1055,25 +1211,31 @@ usWolfY
 	asl
 	ora tmp
 	sta tmp
-	lda #%00000111
+	lda #%11111111
 	bne usEnable
 usWolfHide
-	lda #%00000001
+	lda #%11111001
 usEnable
 	sta $d015
 	lda tmp
 	sta $d010
-	; ---- peter animation: walk cycle only while moving ----
-	ldx #SPRBASE
+	; ---- peter: facing picks the frame pair, walk cycle animates ----
+	ldx peterDir
+	lda peterBase,x
+	sta tmp2
 	lda moving
 	beq usPeterSet
 	lda frame
 	and #8
 	beq usPeterSet
-	inx
+	lda tmp2
+	clc
+	adc peterStride,x
+	sta tmp2
 usPeterSet
-	stx SCREENA+$3f8
-	stx SCREENB+$3f8
+	lda tmp2
+	sta SCREENA+$3f8
+	sta SCREENB+$3f8
 	; ---- wolf pointers: base by facing, +4 for the gait frame ----
 	lda frame
 	and #8
@@ -1269,10 +1431,6 @@ buildLevel
 	jsr scatterTrees
 	jsr scatterRocks
 
-	lda #<statusA
-	ldy #>statusA
-	jsr drawStatus
-
 	; reset game state
 	lda #0
 	sta state
@@ -1284,9 +1442,17 @@ buildLevel
 	sta winFlag
 	sta moving
 	sta wolfFace
+	sta peterDir           ; facing the player
 	lda #1
 	sta nextNum
-	jsr drawStatusDigits
+	; restore the hud line's digits and show it
+	lda #49                ; '1'
+	sta hudLine+5
+	lda #48                ; '0'
+	sta hudLine+12
+	lda #<hudLine
+	ldy #>hudLine
+	jsr renderHud
 	; positions: peter west of centre, wolf far east
 	lda #48
 	sta peterXLo
@@ -1303,14 +1469,19 @@ buildLevel
 	lda #11
 	sta $d028
 	sta $d029
-	; camera: centre on peter, clamped to the world
+	; camera: pixel origin near peter, clamped to the world
 	lda #0
-	sta camRow             ; peter row 19 -> wants 7.. compute below
-	lda #6                 ; (48+12)/8=7 -> col 0; row (140+18)/8=19-12=7
-	sta camRow
-	lda #0
+	sta camXLo
+	sta camXHi
 	sta camCol
-	jsr camPixels
+	sta visCX
+	lda #44                ; peterY 140 - 96 -> mid-window
+	sta camY
+	lsr
+	lsr
+	lsr
+	sta camRow             ; 5
+	sta visCY
 	jsr musicStart
 	jsr renderView
 	jmp updateSprites
@@ -1626,26 +1797,78 @@ srSkip
 	rts
 
 ; ============================================================
-; text
+; HUD: 15 characters of status text rendered into the five
+; hires sprites parked in the top border (immune to scrolling).
+; Each sprite carries 3 glyphs copied from the charset.
 ; ============================================================
-; A/Y = text lo/hi -> draw on row 0 of BOTH screens
-drawStatus
+; A/Y = 15-byte text lo/hi
+renderHud
 	sta txtPtr
 	sty txtPtr+1
-	lda #<SCREENA
+	ldy #14
+rhChar
+	tya
+	pha
+	lda (txtPtr),y
+	cmp #64                ; ASCII letters -> screen codes
+	bcc rhCode
+	sec
+	sbc #64
+rhCode
+	; glyph address = CHARSET + code*8
 	sta scrPtr
-	sta colPtr
-	lda #>SCREENA
+	lda #0
 	sta scrPtr+1
+	asl scrPtr
+	rol scrPtr+1
+	asl scrPtr
+	rol scrPtr+1
+	asl scrPtr
+	rol scrPtr+1
+	lda scrPtr+1
 	clc
-	adc #$d4
-	sta colPtr+1
-	jsr drawText
-	lda #<SCREENB
-	sta scrPtr
-	lda #>SCREENB
+	adc #>CHARSET
 	sta scrPtr+1
-	jmp drawText
+	; destination inside the HUD sprite block
+	lda hudDstLo,y
+	sta colPtr
+	lda hudDstHi,y
+	sta colPtr+1
+	ldx #7
+rhRow
+	txa
+	tay
+	lda (scrPtr),y
+	pha
+	lda row3Tab,x
+	tay
+	pla
+	sta (colPtr),y
+	dex
+	bpl rhRow
+	pla
+	tay
+	dey
+	bpl rhChar
+	rts
+
+; refresh the NEXT/GOT digits inside the live HUD string
+updateHudDigits
+	lda gateOpen
+	bne uhdDone
+	lda nextNum
+	clc
+	adc #48
+	sta hudLine+5
+	lda gotCount
+	clc
+	adc #48
+	sta hudLine+12
+	lda #<hudLine
+	ldy #>hudLine
+	jmp renderHud
+uhdDone
+	rts
 
 ; A/Y = text lo/hi -> draw centred-ish on row 12 of whichever
 ; buffer will be visible next frame (a flip may be pending)
@@ -1688,22 +1911,6 @@ dtxStore
 dtxDone
 	rts
 
-; refresh the NEXT and GOT digits on status line A (both screens)
-drawStatusDigits
-	lda gateOpen
-	bne dsdDone
-	lda nextNum
-	clc
-	adc #48
-	sta SCREENA+13
-	sta SCREENB+13
-	lda gotCount
-	clc
-	adc #48
-	sta SCREENA+20
-	sta SCREENB+20
-dsdDone
-	rts
 
 ; ============================================================
 ; data
@@ -1747,10 +1954,27 @@ appleColW	dc.b 0,0,0,0,0
 appleRowW	dc.b 0,0,0,0,0
 appleNumW	dc.b 0,0,0,0,0
 
-statusA	dc.b "MEADOW  NEXT:1  GOT:0/5  FIRE=WHISTLE   ",0
-statusB	dc.b "MEADOW  GATE OPEN! RUN EAST  GOT:5/5    ",0
 msgCaught	dc.b "THE WOLF GOT YOU!  PRESS FIRE",0
 msgWin	dc.b "YOU ESCAPED THE MEADOW! PRESS FIRE",0
+
+; HUD text: exactly 15 chars = 5 sprites x 3 glyphs
+hudLine	dc.b "NEXT:1  GOT:0/5"
+hudGate	dc.b "GO EAST!    5/5"
+; destination of each glyph column inside the HUD sprite block
+hudDstLo
+	dc.b <(HUDSPR+0),<(HUDSPR+1),<(HUDSPR+2)
+	dc.b <(HUDSPR+64),<(HUDSPR+65),<(HUDSPR+66)
+	dc.b <(HUDSPR+128),<(HUDSPR+129),<(HUDSPR+130)
+	dc.b <(HUDSPR+192),<(HUDSPR+193),<(HUDSPR+194)
+	dc.b <(HUDSPR+256),<(HUDSPR+257),<(HUDSPR+258)
+hudDstHi
+	dc.b >(HUDSPR+0),>(HUDSPR+1),>(HUDSPR+2)
+	dc.b >(HUDSPR+64),>(HUDSPR+65),>(HUDSPR+66)
+	dc.b >(HUDSPR+128),>(HUDSPR+129),>(HUDSPR+130)
+	dc.b >(HUDSPR+192),>(HUDSPR+193),>(HUDSPR+194)
+	dc.b >(HUDSPR+256),>(HUDSPR+257),>(HUDSPR+258)
+row3Tab	dc.b 0,3,6,9,12,15,18,21
+hudXTab	dc.b 124,148,172,196,220   ; centred over the view
 
 ; sfx tables: (frames,freqHi) pairs, 0 = end
 sfxWhistle	dc.b 5,$68,6,$8c,0
@@ -1758,9 +1982,15 @@ sfxBuzz	dc.b 10,$06,0
 sfxCaught	dc.b 8,$30,8,$24,8,$1a,12,$10,0
 sfxWin	dc.b 7,$40,7,$50,7,$60,14,$80,0
 
+; peter sprite pointer base + walk-frame stride, by peterDir
+; layout: $80 D1,$81 D2,$82 U1,$83 U2,$84 L1,$85 R1,$86 L2,$87 R2
+peterBase	dc.b SPRBASE+0,SPRBASE+2,SPRBASE+4,SPRBASE+5
+peterStride	dc.b 1,1,2,2
+
 ; wolf sprite pointer bases, indexed by wolfFace (0=left 1=right)
-wolfBaseA	dc.b SPRBASE+2,SPRBASE+4   ; screen-left half
-wolfBaseB	dc.b SPRBASE+3,SPRBASE+5   ; screen-right half
+; layout: $88 L1a,$89 L1b,$8a R1a,$8b R1b, +4 for gait frame 2
+wolfBaseA	dc.b SPRBASE+8,SPRBASE+10  ; screen-left half
+wolfBaseB	dc.b SPRBASE+9,SPRBASE+11  ; screen-right half
 
 ; music: song table + per-song instrument, indexed by musSong
 songLo	dc.b <songPeterData,<songWolfData
