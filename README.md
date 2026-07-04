@@ -236,14 +236,19 @@ for the wolf) rather than flat shapes, to match the polish of the meadow scenery
 ## 🕹️ Commodore 64 port (Level 1)
 
 `c64/` holds a from-scratch 6502 assembly port of Level 1, **The Meadow**, for real
-C64 hardware (or VICE). Gather the numbered apples in order, whistle (FIRE) to stun
-the wolf, then escape through the gate on the right. Joystick in port 2.
+C64 hardware (or VICE). Roam a **1024×256-pixel scrolling meadow** (about 3 screens
+wide) gathering the numbered apples in order, whistle (FIRE) to stun the wolf, then
+escape through the gate at the far east end. Joystick in port 2.
 
 - **Run it:** load `c64/build/meadow.d64` (or `meadow.prg`) in VICE — `x64sc build\meadow.d64`.
-- **Tech:** Peter is a multicolor hardware sprite; the wolf is **two sprites side by
-  side** (48px of muzzle, ears, ridge back and raised tail, auto-mirrored for facing)
-  that hunts around obstacles; apples, trees, pond and gate are a custom character set
-  overlaid on the ROM font; raster-IRQ-synced 50 Hz game loop.
+- **Tech:** the world lives as a 128×32 tile map in RAM; a dead-zone camera follows
+  Peter and the view is **double-buffered** — each scroll step renders off-screen,
+  flips via `$d018` in the border, then blasts color RAM down the screen just ahead
+  of the raster beam. Peter is a multicolor hardware sprite; the wolf is **two
+  sprites side by side** (48px of muzzle, ears, ridge back and raised tail,
+  auto-mirrored for facing) that hunts you across the whole map — on-screen or off —
+  and picks his way around obstacles; the scenery is a custom character set overlaid
+  on the ROM font; raster-IRQ-synced 50 Hz game loop.
 - **Music:** Prokofiev on the SID — Peter's theme loops on voice 2 (pulse), and when
   the wolf gets close his theme takes over (sawtooth) until you shake him off. The
   note tables are generated from the same `tools/themes_js.json` leitmotifs the web

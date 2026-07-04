@@ -1,11 +1,17 @@
 ; ============================================================
 ;  PETER AND THE WOLF - Level 1: The Meadow
-;  Commodore 64 port skeleton (dasm syntax)
+;  Commodore 64 port (dasm syntax)
 ;
-;  Gather the numbered apples IN ORDER, then escape through
-;  the gate on the right - while the wolf hunts you down.
-;  Joystick port 2 moves Peter; FIRE blows the whistle, which
-;  stuns the wolf for a moment (long cooldown).
+;  A 1024x256 pixel scrolling meadow (128x32 tiles, ~3 screens
+;  wide).  Gather the numbered apples IN ORDER, then escape
+;  through the gate at the far right - while the wolf hunts you
+;  across the whole world, on-screen or off.  Joystick port 2;
+;  FIRE blows the whistle, stunning the wolf (long cooldown).
+;
+;  The view is double buffered: the visible window renders into
+;  the off-screen buffer ($0400/$2c00) and flips via $d018 at
+;  the frame boundary; color RAM is blasted right behind the
+;  flip, racing (and beating) the beam down the screen.
 ;
 ;  Build: see build.ps1 (dasm -> meadow.prg -> meadow.d64)
 ; ============================================================
@@ -22,44 +28,65 @@ gateOpen  equ $07
 stun      equ $08          ; wolf frozen while >0
 cooldown  equ $09          ; whistle recharge
 joy       equ $0a          ; active-high joystick bits
-peterXLo  equ $0b
+peterXLo  equ $0b          ; world coords, pixel resolution
 peterXHi  equ $0c
-peterY    equ $0d
+peterY    equ $0d          ; world Y fits a byte (0..235)
 wolfXLo   equ $0e
 wolfXHi   equ $0f
 wolfY     equ $10
-wolfFace  equ $11          ; 0=left 2=right (sprite pointer offset)
+wolfFace  equ $11          ; 0=left 1=right
 moving    equ $12
 msgTimer  equ $13          ; delay before FIRE accepted on message screens
 buzzTimer equ $14          ; rate-limits the wrong-apple buzz
 sfxTimer  equ $15
 sfxPtr    equ $16          ; ..$17
-lastCol   equ $18          ; set by getCell
+lastCol   equ $18          ; world cell, set by getCell
 lastRow   equ $19
 tmpLo     equ $1a
 tmpHi     equ $1b
 tmp       equ $1c
 dynBuf    equ $1d          ; ..$1f: 3-byte RAM sfx (dur,freq,0)
 winFlag   equ $20
-rndSeed   equ $21
 newXLo    equ $22          ; candidate X while moving (getCell eats tmpLo)
 newXHi    equ $23
 musPtr    equ $24          ; ..$25 current music note pointer
 musTimer  equ $26
 musSong   equ $27          ; 0 = peter's theme, 1 = wolf's theme
 musWave   equ $28          ; SID waveform of the current song's voice
+camCol    equ $2a          ; camera cell origin (0..88)
+camRow    equ $2b          ; (0..8)
+camXLo    equ $2c          ; camera pixel origin = camCol*8
+camXHi    equ $2d
+camY      equ $2e          ; camRow*8 (0..64)
+visBuf    equ $2f          ; which screen is visible (0=$0400 1=$2c00)
+scrOff    equ $30          ; active screen page offset from $04xx
+flipReq   equ $31
+camMoved  equ $32
+seedLo    equ $34          ; 16-bit LFSR
+seedHi    equ $35
+mapP      equ $f5          ; ..$f6 world map pointer
+dstP      equ $f7          ; ..$f8 render destination
+colBufP   equ $36          ; ..$37 color buffer pointer (render + blast)
 colPtr    equ $f9          ; ..$fa color RAM pointer
 scrPtr    equ $fb          ; ..$fc screen RAM pointer
 txtPtr    equ $fd          ; ..$fe text pointer
 
 ; ---------------- constants ----------------
-SCREEN    equ $0400
+SCREENA   equ $0400
+SCREENB   equ $2c00        ; in VIC bank 0, clear of code/sprites/charset
 COLRAM    equ $d800
-CHARSET   equ $3800        ; VIC sees this via $d018=$1e
+CHARSET   equ $3800        ; VIC sees this via $d018
+MAP       equ $4000        ; 128x32 world cells ($4000-$4fff)
+COLORBUF  equ $5000        ; 960-byte color image of the view
+COLTAB    equ $5400        ; char -> color, 256 entries (RAM: gate recolors)
 SPRBASE   equ $80          ; $2000/64
 APPLE_CH  equ 132
 GATE_CH   equ 136
 N_APPLES  equ 5
+MAPW      equ 128
+MAPH      equ 32
+CAMCOLMAX equ MAPW-40
+CAMROWMAX equ MAPH-24
 
 ; ============================================================
 	org $0801
@@ -71,6 +98,10 @@ start
 	jsr copyCharset
 	jsr initVic
 	jsr initSid
+	lda #0
+	sta visBuf
+	sta scrOff
+	sta flipReq
 	jsr buildLevel
 	; raster IRQ at line $fa
 	lda #$7f
@@ -94,6 +125,22 @@ mainloop
 	beq mainloop
 	lda #0
 	sta syncFlag
+	; pending buffer flip: swap screens in the border, then win
+	; the race against the beam re-colouring the new image
+	lda flipReq
+	beq mlNoFlip
+	lda #0
+	sta flipReq
+	lda visBuf
+	eor #1
+	sta visBuf
+	tax
+	lda d018Tab,x
+	sta $d018
+	lda scrOffTab,x
+	sta scrOff
+	jsr colorBlast
+mlNoFlip
 	jsr tick
 	jmp mainloop
 
@@ -156,7 +203,7 @@ initVic
 	sta $d015              ; sprites 0 (peter) + 1/2 (wolf front + rear)
 	sta $d01c              ; all multicolor
 	lda #0
-	sta $d01d              ; no expansion: the wolf is two real sprites
+	sta $d01d
 	sta $d017
 	sta $d01b              ; sprites in front of chars
 	sta $d025              ; multicolor 1: black
@@ -211,6 +258,7 @@ tkDone
 
 tickPlay
 	jsr movePeter
+	jsr updateCamera
 	jsr checkPickup
 	jsr whistle
 	jsr moveWolf
@@ -261,7 +309,7 @@ movePeter
 	lda joy
 	and #%00001000
 	beq mpTryLeft
-	; right +2
+	; right +2, clamp to 1000 ($03e8)
 	lda newXLo
 	clc
 	adc #2
@@ -269,12 +317,12 @@ movePeter
 	lda newXHi
 	adc #0
 	sta newXHi
-	; clamp to 318 ($013e)
-	beq mpXGo
-	lda newXLo
-	cmp #$3e
+	cmp #3
 	bcc mpXGo
-	lda #$3e
+	lda newXLo
+	cmp #$e8
+	bcc mpXGo
+	lda #$e8
 	sta newXLo
 	jmp mpXGo
 mpTryLeft
@@ -288,13 +336,10 @@ mpTryLeft
 	lda newXHi
 	sbc #0
 	sta newXHi
-	; clamp to 24
-	bne mpXGo
-	lda newXLo
-	cmp #24
-	bcs mpXGo
-	lda #24
+	bpl mpXGo              ; went negative: clamp to 0
+	lda #0
 	sta newXLo
+	sta newXHi
 mpXGo
 	lda newXLo
 	sta tmpLo
@@ -321,9 +366,8 @@ mpVert
 	lda peterY
 	sec
 	sbc #2
-	cmp #44
 	bcs mpYGo
-	lda #44
+	lda #0
 	jmp mpYGo
 mpTryDown
 	lda joy
@@ -332,9 +376,9 @@ mpTryDown
 	lda peterY
 	clc
 	adc #2
-	cmp #228
+	cmp #235
 	bcc mpYGo
-	lda #228
+	lda #235
 mpYGo
 	sta tmp
 	jsr getCell
@@ -347,33 +391,26 @@ mpDone
 	rts
 
 ; ============================================================
-; getCell: tmpLo/Hi = pixel X (sprite coords), A = pixel Y.
-; Returns A = screen code at Peter's feet, sets lastCol/lastRow
-; and scrPtr/colPtr to the row base.  Clobbers tmpLo/Hi.
+; getCell: tmpLo/Hi = world X of a sprite's left edge (the wolf
+; adds 24 first so both probe their centre), A = world Y.
+; Returns A = map cell char, sets lastCol/lastRow and mapP to
+; the cell's row base (Y=lastCol indexes it).  Eats tmpLo/Hi.
 ; ============================================================
 getCell
-	sec
-	sbc #32                ; sprite Y -> foot row: (y-50+18)/8
+	clc
+	adc #18                ; feet
 	lsr
 	lsr
 	lsr
 	sta lastRow
-	tax
-	lda rowLo,x
-	sta scrPtr
-	sta colPtr
-	lda rowHi,x
-	sta scrPtr+1
-	clc
-	adc #$d4               ; $0400 screen -> $d800 color
-	sta colPtr+1
-	; sprite X -> centre column: (x-24+12)/8
+	jsr mapRowBase
+	; centre column: (x+12)/8
 	lda tmpLo
-	sec
-	sbc #12
+	clc
+	adc #12
 	sta tmpLo
 	lda tmpHi
-	sbc #0
+	adc #0
 	lsr
 	ror tmpLo
 	lsr
@@ -383,7 +420,17 @@ getCell
 	lda tmpLo
 	sta lastCol
 	tay
-	lda (scrPtr),y
+	lda (mapP),y
+	rts
+
+; A = world row (0..31) -> mapP = MAP + row*128
+mapRowBase
+	lsr                    ; C = row&1
+	ora #$40               ; hi = $40 | row/2
+	sta mapP+1
+	lda #0
+	ror                    ; lo = (row&1)*128
+	sta mapP
 	rts
 
 ; A = screen code -> carry set if blocked.  Walking into the
@@ -392,7 +439,7 @@ checkBlocked
 	cmp #GATE_CH
 	beq cbGate
 	cmp #130
-	bcc cbClear            ; grass, text, digits, space
+	bcc cbClear            ; grass, digits, space
 	cmp #APPLE_CH
 	beq cbClear
 	cmp #CHAR_FIRST+CHAR_COUNT
@@ -406,6 +453,208 @@ cbGate
 	inc winFlag
 cbBlocked
 	sec
+	rts
+
+; like checkBlocked but the gate is ALWAYS solid to the wolf
+checkBlockedWolf
+	cmp #130
+	bcc cwClear
+	cmp #APPLE_CH
+	beq cwClear
+	cmp #CHAR_FIRST+CHAR_COUNT
+	bcc cwBlocked
+cwClear
+	clc
+	rts
+cwBlocked
+	sec
+	rts
+
+; ============================================================
+; camera: follow peter with a dead zone, stepping whole cells
+; ============================================================
+updateCamera
+	lda #0
+	sta camMoved
+	; peter's foot column
+	lda peterXLo
+	clc
+	adc #12
+	sta tmpLo
+	lda peterXHi
+	adc #0
+	lsr
+	ror tmpLo
+	lsr
+	ror tmpLo
+	lsr
+	ror tmpLo
+	lda tmpLo
+	sec
+	sbc camCol             ; screen column
+	cmp #16
+	bcs ucRight
+	lda camCol
+	beq ucRows
+	dec camCol
+	inc camMoved
+	jmp ucRows
+ucRight
+	cmp #24
+	bcc ucRows
+	lda camCol
+	cmp #CAMCOLMAX
+	bcs ucRows
+	inc camCol
+	inc camMoved
+ucRows
+	lda peterY
+	clc
+	adc #18
+	lsr
+	lsr
+	lsr
+	sec
+	sbc camRow             ; screen row
+	cmp #9
+	bcs ucDown
+	lda camRow
+	beq ucApply
+	dec camRow
+	inc camMoved
+	jmp ucApply
+ucDown
+	cmp #15
+	bcc ucApply
+	lda camRow
+	cmp #CAMROWMAX
+	bcs ucApply
+	inc camRow
+	inc camMoved
+ucApply
+	lda camMoved
+	beq ucDone
+	jsr camPixels
+	jsr renderView
+ucDone
+	rts
+
+camPixels
+	lda camCol
+	sta camXLo
+	lda #0
+	sta camXHi
+	asl camXLo
+	rol camXHi
+	asl camXLo
+	rol camXHi
+	asl camXLo
+	rol camXHi
+	lda camRow
+	asl
+	asl
+	asl
+	sta camY
+	rts
+
+; ============================================================
+; render the 40x24 view into the OFF-SCREEN buffer + color
+; buffer, then request a flip.  Never touches the visible screen.
+; ============================================================
+renderView
+	; dest = inactive screen, row 1
+	lda visBuf
+	eor #1
+	tax
+	lda scrOffTab,x
+	clc
+	adc #>SCREENA
+	sta dstP+1
+	lda #40                ; skip the status row
+	sta dstP
+	lda #<COLORBUF
+	sta colBufP
+	lda #>COLORBUF
+	sta colBufP+1
+	lda camRow
+	sta tmp                ; current world row
+	ldx #24
+rvRow
+	txa
+	pha
+	lda tmp
+	jsr mapRowBase
+	lda mapP
+	clc
+	adc camCol
+	sta mapP               ; row base + camCol (never crosses a page)
+	ldy #39
+rvCell
+	lda (mapP),y
+	sta (dstP),y
+	tax
+	lda COLTAB,x
+	sta (colBufP),y
+	dey
+	bpl rvCell
+	; advance dest pointers by 40
+	lda dstP
+	clc
+	adc #40
+	sta dstP
+	bcc rvD1
+	inc dstP+1
+rvD1
+	lda colBufP
+	clc
+	adc #40
+	sta colBufP
+	bcc rvD2
+	inc colBufP+1
+rvD2
+	inc tmp
+	pla
+	tax
+	dex
+	bne rvRow
+	inc flipReq
+	rts
+
+; copy the color buffer into color RAM top-down; starting in the
+; border it stays ahead of the raster beam all the way
+colorBlast
+	lda #<COLORBUF
+	sta colBufP
+	lda #>COLORBUF
+	sta colBufP+1
+	lda #<(COLRAM+40)
+	sta colPtr
+	lda #>(COLRAM+40)
+	sta colPtr+1
+	ldx #24
+cbRow
+	ldy #39
+cbCell
+	lda (colBufP),y
+	sta (colPtr),y
+	dey
+	bpl cbCell
+	lda colBufP
+	clc
+	adc #40
+	sta colBufP
+	bcc cbA1
+	inc colBufP+1
+cbA1
+	lda colPtr
+	clc
+	adc #40
+	sta colPtr
+	bcc cbA2
+	inc colPtr+1
+cbA2
+	dex
+	bne cbRow
 	rts
 
 ; ============================================================
@@ -460,11 +709,18 @@ cpFound
 cpCollect
 	lda #$ff
 	sta appleRowW,x        ; gone
+	txa
+	pha
+	; erase from the world map, then re-render the view
+	lda lastRow
+	jsr mapRowBase
 	lda #32
 	ldy tmp
-	sta (scrPtr),y
+	sta (mapP),y
 	iny
-	sta (scrPtr),y
+	sta (mapP),y
+	pla
+	tax
 	inc gotCount
 	inc nextNum
 	; rising pickup note
@@ -484,31 +740,16 @@ cpCollect
 	jsr sfxStart
 	lda gotCount
 	cmp #N_APPLES
-	beq cpAllDone
-	jmp drawStatusDigits
-cpAllDone
+	bne cpRedraw
 	inc gateOpen
+	lda #7                 ; the gate lights up yellow
+	sta COLTAB+GATE_CH
 	lda #<statusB          ; "GATE OPEN! RUN RIGHT"
 	ldy #>statusB
 	jsr drawStatus
-	; light the gate up yellow
-	ldx #10
-cpGateCol
-	lda rowLo,x
-	sta colPtr
-	lda rowHi,x
-	clc
-	adc #$d4
-	sta colPtr+1
-	ldy #38
-	lda #7
-	sta (colPtr),y
-	iny
-	sta (colPtr),y
-	inx
-	cpx #15
-	bne cpGateCol
-	rts
+cpRedraw
+	jsr drawStatusDigits
+	jmp renderView
 
 ; ============================================================
 ; whistle: FIRE stuns the wolf, then needs a long recharge
@@ -530,8 +771,8 @@ whDone
 	rts
 
 ; ============================================================
-; wolf: hunts Peter but respects trees/rocks/water, sidestepping
-; around whatever blocks the straight line
+; wolf: hunts Peter across the world, respecting obstacles and
+; sidestepping around whatever blocks the straight line
 ; ============================================================
 moveWolf
 	lda stun
@@ -578,11 +819,18 @@ mwRight
 mwFaceR
 	lda #1
 	sta wolfFace
+	; never past X=976: his probe must stay inside the map
+	lda newXHi
+	cmp #3
+	bne mwXtry
+	lda newXLo
+	cmp #$d1
+	bcs mwYAxis
 mwXtry
-	; wolf centre foot cell: getCell expects centre+12 like peter
+	; probe the wolf's centre: getCell adds the +12 itself
 	lda newXLo
 	clc
-	adc #36
+	adc #24
 	sta tmpLo
 	lda newXHi
 	adc #0
@@ -625,7 +873,7 @@ mwYtry
 	sta tmp
 	lda wolfXLo
 	clc
-	adc #36
+	adc #24
 	sta tmpLo
 	lda wolfXHi
 	adc #0
@@ -660,22 +908,6 @@ mwSideL
 	sbc #0
 	sta wolfXHi
 mwDone
-	rts
-
-; like checkBlocked but the gate is ALWAYS solid to the wolf
-; (and never sets winFlag)
-checkBlockedWolf
-	cmp #130
-	bcc cwClear
-	cmp #APPLE_CH
-	beq cwClear
-	cmp #CHAR_FIRST+CHAR_COUNT
-	bcc cwBlocked
-cwClear
-	clc
-	rts
-cwBlocked
-	sec
 	rts
 
 ; |peter centre - wolf centre| -> tmpLo/Hi (16 bit)
@@ -749,40 +981,89 @@ ccDone
 	rts
 
 ; ============================================================
-; sprites -> VIC registers
+; sprites -> VIC registers (world - camera = screen)
 ; ============================================================
 updateSprites
+	; ---- peter (always on screen: the camera follows him) ----
 	lda peterXLo
-	sta $d000
-	lda peterY
-	sta $d001
-	; wolf: two sprites side by side, rear half at +24
-	lda wolfXLo
-	sta $d002
-	lda wolfY
-	sta $d003
-	sta $d005
-	lda wolfXLo
+	sec
+	sbc camXLo
+	sta tmpLo
+	lda peterXHi
+	sbc camXHi
+	sta tmpHi
+	lda tmpLo
 	clc
 	adc #24
-	sta $d004
+	sta $d000
+	lda tmpHi
+	adc #0
+	and #1
+	sta tmp                ; d010 accumulator, bit 0
+	lda peterY
+	sec
+	sbc camY
+	clc
+	adc #50
+	sta $d001
+	; ---- wolf: visible only when his window overlaps the view ----
+	lda wolfXLo
+	sec
+	sbc camXLo
+	sta newXLo
 	lda wolfXHi
+	sbc camXHi
+	sta newXHi
+	bmi usWolfHide         ; left of the view
+	beq usWolfY            ; 0..255: on
+	cmp #1
+	bne usWolfHide         ; 512+ px away
+	lda newXLo
+	cmp #41
+	bcs usWolfHide         ; too far right
+usWolfY
+	lda wolfY
+	sec
+	sbc camY
+	bcc usWolfHide         ; above the view
+	cmp #172
+	bcs usWolfHide         ; below it
+	clc
+	adc #50
+	sta $d003
+	sta $d005
+	; front half x
+	lda newXLo
+	clc
+	adc #24
+	sta $d002
+	lda newXHi
+	adc #0
+	and #1
+	asl
+	ora tmp
+	sta tmp
+	; rear half x = +24 more
+	lda newXLo
+	clc
+	adc #48
+	sta $d004
+	lda newXHi
 	adc #0
 	and #1
 	asl
 	asl
-	sta tmp                ; sprite 2 MSB, in place
-	; X MSBs: bit0 peter, bit1 wolf front, bit2 wolf rear
-	lda peterXHi
-	and #1
-	sta tmpHi
-	lda wolfXHi
-	and #1
-	asl
-	ora tmpHi
 	ora tmp
+	sta tmp
+	lda #%00000111
+	bne usEnable
+usWolfHide
+	lda #%00000001
+usEnable
+	sta $d015
+	lda tmp
 	sta $d010
-	; peter animation: walk cycle only while moving
+	; ---- peter animation: walk cycle only while moving ----
 	ldx #SPRBASE
 	lda moving
 	beq usPeterSet
@@ -791,21 +1072,24 @@ updateSprites
 	beq usPeterSet
 	inx
 usPeterSet
-	stx SCREEN+$3f8
-	; wolf pointers: base by facing, +4 for the second gait frame
+	stx SCREENA+$3f8
+	stx SCREENB+$3f8
+	; ---- wolf pointers: base by facing, +4 for the gait frame ----
 	lda frame
 	and #8
 	lsr                    ; 0 or 4
-	sta tmp
+	sta tmpHi
 	ldx wolfFace           ; 0=left 1=right
 	lda wolfBaseA,x
 	clc
-	adc tmp
-	sta SCREEN+$3f9
+	adc tmpHi
+	sta SCREENA+$3f9
+	sta SCREENB+$3f9
 	lda wolfBaseB,x
 	clc
-	adc tmp
-	sta SCREEN+$3fa
+	adc tmpHi
+	sta SCREENA+$3fa
+	sta SCREENB+$3fa
 	; stunned wolf flashes white
 	ldx #11
 	lda stun
@@ -972,32 +1256,18 @@ mtRts
 	rts
 
 ; ============================================================
-; level build / reset
+; level build: paint the 128x32 world map, then show it
 ; ============================================================
 buildLevel
-	; clear playfield rows 1..24
-	ldx #1
-blClrRow
-	lda rowLo,x
-	sta scrPtr
-	lda rowHi,x
-	sta scrPtr+1
-	lda #32
-	ldy #39
-blClrCol
-	sta (scrPtr),y
-	dey
-	bpl blClrCol
-	inx
-	cpx #25
-	bne blClrRow
-
+	jsr initColTab
+	jsr mapClear
 	jsr scatterGrass
-	jsr drawPond
-	jsr drawTrees
-	jsr drawRocks
+	jsr drawPonds
+	jsr placeApples
+	jsr drawOak
 	jsr drawGate
-	jsr resetApples
+	jsr scatterTrees
+	jsr scatterRocks
 
 	lda #<statusA
 	ldy #>statusA
@@ -1017,244 +1287,160 @@ blClrCol
 	lda #1
 	sta nextNum
 	jsr drawStatusDigits
-	; positions: peter mid-left, wolf top-right
-	lda #50
+	; positions: peter west of centre, wolf far east
+	lda #48
 	sta peterXLo
 	lda #0
 	sta peterXHi
-	lda #180
+	lda #140
 	sta peterY
-	lda #$18               ; 280 = $0118
+	lda #<700
 	sta wolfXLo
-	lda #$01
+	lda #>700
 	sta wolfXHi
-	lda #70
+	lda #60
 	sta wolfY
 	lda #11
 	sta $d028
 	sta $d029
+	; camera: centre on peter, clamped to the world
+	lda #0
+	sta camRow             ; peter row 19 -> wants 7.. compute below
+	lda #6                 ; (48+12)/8=7 -> col 0; row (140+18)/8=19-12=7
+	sta camRow
+	lda #0
+	sta camCol
+	jsr camPixels
 	jsr musicStart
+	jsr renderView
 	jmp updateSprites
 
-; ---- deterministic grass + flowers via 8-bit LFSR ----
+; char -> color table, rebuilt each level (the gate entry mutates)
+initColTab
+	ldx #0
+	lda #1                 ; default: white (text, digits)
+ictFill
+	sta COLTAB,x
+	inx
+	bne ictFill
+	ldx #CHAR_COUNT-1
+ictPatch
+	lda charColors,x
+	sta COLTAB+CHAR_FIRST,x
+	dex
+	bpl ictPatch
+	rts
+
+mapClear
+	lda #<MAP
+	sta mapP
+	lda #>MAP
+	sta mapP+1
+	ldx #16                ; 16 pages = 4KB
+	lda #32
+	ldy #0
+mcPage
+	sta (mapP),y
+	iny
+	bne mcPage
+	inc mapP+1
+	dex
+	bne mcPage
+	rts
+
+; 16-bit LFSR (Galois, poly $002d) - the map masks line up with
+; its byte perfectly: col = rnd&127, row = rnd&31
+rnd
+	asl seedLo
+	rol seedHi
+	bcc rndOk
+	lda seedLo
+	eor #$2d
+	sta seedLo
+rndOk
+	lda seedLo
+	rts
+
 scatterGrass
 	lda #$a7
-	sta rndSeed
+	sta seedLo
+	lda #$3c
+	sta seedHi
 	ldx #0
 sgLoop
 	txa
 	pha
 	jsr rnd
-	and #63
-	cmp #40
-	bcs sgSkip
+	and #127
 	sta tmp                ; column
 	jsr rnd
 	and #31
-	cmp #2
-	bcc sgSkip
-	cmp #25
-	bcs sgSkip
-	tax                    ; row
-	lda rowLo,x
-	sta scrPtr
-	sta colPtr
-	lda rowHi,x
-	sta scrPtr+1
-	clc
-	adc #$d4
-	sta colPtr+1
+	jsr mapRowBase
 	ldy tmp
-	lda (scrPtr),y
+	lda (mapP),y
 	cmp #32
 	bne sgSkip
 	jsr rnd
 	and #1
-	beq sgTuft
-	lda #129               ; flower
-	sta (scrPtr),y
-	lda #7                 ; yellow
-	sta (colPtr),y
-	jmp sgSkip
-sgTuft
-	lda #128
-	sta (scrPtr),y
-	lda #5                 ; green
-	sta (colPtr),y
+	clc
+	adc #128               ; tuft or flower
+	sta (mapP),y
 sgSkip
 	pla
 	tax
 	inx
-	cpx #200
+	cpx #250
 	bne sgLoop
+	ldx #0                 ; two passes: 500 attempts over 4096 cells
+sgLoop2
+	txa
+	pha
+	jsr rnd
+	and #127
+	sta tmp
+	jsr rnd
+	and #31
+	jsr mapRowBase
+	ldy tmp
+	lda (mapP),y
+	cmp #32
+	bne sgSkip2
+	jsr rnd
+	and #1
+	clc
+	adc #128
+	sta (mapP),y
+sgSkip2
+	pla
+	tax
+	inx
+	cpx #250
+	bne sgLoop2
 	rts
 
-rnd
-	lda rndSeed
-	asl
-	bcc rndNoEor
-	eor #$1d
-rndNoEor
-	sta rndSeed
-	rts
-
-; ---- pond, bottom left ----
-drawPond
+; two ponds, drawn row by row from the table
+drawPonds
 	ldx #0
 dpLoop
 	lda pondRow,x
-	tay
-	lda rowLo,y
-	sta scrPtr
-	sta colPtr
-	lda rowHi,y
-	sta scrPtr+1
-	clc
-	adc #$d4
-	sta colPtr+1
+	jsr mapRowBase
 	lda pondLen,x
 	sta tmp
 	ldy pondCol,x
 dpCell
 	lda #131
-	sta (scrPtr),y
-	lda #14                ; light blue
-	sta (colPtr),y
+	sta (mapP),y
 	iny
 	dec tmp
 	bne dpCell
 	inx
-	cpx #4
+	cpx #N_PONDROWS
 	bne dpLoop
 	rts
 
-; ---- trees: 2x2 (canopy pair over trunk pair); oak is 4x2+trunk ----
-drawTrees
-	ldx #0
-dtLoop
-	txa
-	pha
-	lda treeRow,x
-	pha
-	lda treeCol,x
-	tay
-	pla
-	tax                    ; X=row Y=col
-	jsr setRowPtrs
-	lda #133
-	sta (scrPtr),y
-	iny
-	sta (scrPtr),y
-	dey
-	lda #5
-	sta (colPtr),y
-	iny
-	sta (colPtr),y
-	inx
-	jsr setRowPtrs
-	dey
-	lda #134
-	sta (scrPtr),y
-	iny
-	lda #135
-	sta (scrPtr),y
-	dey
-	lda #9                 ; brown
-	sta (colPtr),y
-	iny
-	sta (colPtr),y
-	pla
-	tax
-	inx
-	cpx #N_TREES
-	bne dtLoop
-	; ---- the big oak: canopy 4 wide x 2 tall at (19,10), trunk row 12 ----
-	ldx #10
-dtOakRow
-	jsr setRowPtrs
-	ldy #19
-dtOakCell
-	lda #133
-	sta (scrPtr),y
-	lda #5
-	sta (colPtr),y
-	iny
-	cpy #23
-	bne dtOakCell
-	inx
-	cpx #12
-	bne dtOakRow
-	jsr setRowPtrs         ; x=12: trunk
-	ldy #20
-	lda #134
-	sta (scrPtr),y
-	lda #9
-	sta (colPtr),y
-	iny
-	lda #135
-	sta (scrPtr),y
-	lda #9
-	sta (colPtr),y
-	rts
-
-; X=row -> scrPtr/colPtr (preserves X and Y)
-setRowPtrs
-	lda rowLo,x
-	sta scrPtr
-	sta colPtr
-	lda rowHi,x
-	sta scrPtr+1
-	clc
-	adc #$d4
-	sta colPtr+1
-	rts
-
-drawRocks
-	ldx #0
-drLoop
-	txa
-	pha
-	lda rockRow,x
-	pha
-	lda rockCol,x
-	tay
-	pla
-	tax
-	jsr setRowPtrs
-	lda #130
-	sta (scrPtr),y
-	lda #12                ; grey
-	sta (colPtr),y
-	pla
-	tax
-	inx
-	cpx #N_ROCKS
-	bne drLoop
-	rts
-
-drawGate
-	; two columns wide so Peter's foot cell can actually reach it
-	ldx #10
-dgLoop
-	jsr setRowPtrs
-	ldy #38
-	lda #GATE_CH
-	sta (scrPtr),y
-	lda #9
-	sta (colPtr),y
-	iny
-	lda #GATE_CH
-	sta (scrPtr),y
-	lda #9
-	sta (colPtr),y
-	inx
-	cpx #15
-	bne dgLoop
-	rts
-
-resetApples
+placeApples
 	ldx #N_APPLES-1
-raCopy
+paCopy
 	lda appleCol,x
 	sta appleColW,x
 	lda appleRow,x
@@ -1262,69 +1448,227 @@ raCopy
 	lda appleNum,x
 	sta appleNumW,x
 	dex
-	bpl raCopy
+	bpl paCopy
 	ldx #0
-raDraw
+paDraw
 	txa
 	pha
 	lda appleRow,x
-	pha
+	jsr mapRowBase
 	lda appleNum,x
-	sta tmp
-	lda appleCol,x
-	tay
+	clc
+	adc #48
+	sta tmp                ; digit char
 	pla
 	tax
-	jsr setRowPtrs
+	ldy appleCol,x
 	lda #APPLE_CH
-	sta (scrPtr),y
-	lda #2                 ; red apple
-	sta (colPtr),y
+	sta (mapP),y
 	iny
 	lda tmp
+	sta (mapP),y
+	inx
+	cpx #N_APPLES
+	bne paDraw
+	rts
+
+; the big oak: 4x2 canopy + 2-cell trunk at world (60,12)
+drawOak
+	lda #12
+	jsr mapRowBase
+	jsr doCanopy
+	lda #13
+	jsr mapRowBase
+	jsr doCanopy
+	lda #14
+	jsr mapRowBase
+	ldy #61
+	lda #134
+	sta (mapP),y
+	iny
+	lda #135
+	sta (mapP),y
+	rts
+doCanopy
+	ldy #60
+	lda #133
+doCan1
+	sta (mapP),y
+	iny
+	cpy #64
+	bne doCan1
+	rts
+
+drawGate
+	lda #12
+	sta tmp
+dgLoop
+	lda tmp
+	jsr mapRowBase
+	ldy #126
+	lda #GATE_CH
+	sta (mapP),y
+	iny
+	sta (mapP),y
+	inc tmp
+	lda tmp
+	cmp #18
+	bne dgLoop
+	rts
+
+; trees are 2x2 (canopy pair over trunk pair), placed by the
+; LFSR wherever a 2x2 patch of plain meadow allows
+scatterTrees
+	ldx #0
+stLoop
+	txa
+	pha
+	jsr rnd
+	and #127
+	cmp #124
+	bcs stSkip
+	sta tmp                ; column
+	jsr rnd
+	and #31
+	cmp #1
+	bcc stSkip
+	cmp #29
+	bcs stSkip
+	sta tmpHi              ; row
+	jsr patchFree
+	bcs stSkip
+	; plant it
+	lda tmpHi
+	jsr mapRowBase
+	ldy tmp
+	lda #133
+	sta (mapP),y
+	iny
+	sta (mapP),y
+	lda tmpHi
 	clc
-	adc #48                ; digit screen code
-	sta (scrPtr),y
-	lda #1                 ; white digit
-	sta (colPtr),y
+	adc #1
+	jsr mapRowBase
+	ldy tmp
+	lda #134
+	sta (mapP),y
+	iny
+	lda #135
+	sta (mapP),y
+stSkip
 	pla
 	tax
 	inx
-	cpx #N_APPLES
-	bne raDraw
+	cpx #64
+	bne stLoop
+	rts
+
+; is the 2x2 patch at (tmp,tmpHi) plain meadow? C clear = yes
+patchFree
+	lda tmpHi
+	jsr mapRowBase
+	ldy tmp
+	jsr cellPlain
+	bcs pfNo
+	iny
+	jsr cellPlain
+	bcs pfNo
+	lda tmpHi
+	clc
+	adc #1
+	jsr mapRowBase
+	ldy tmp
+	jsr cellPlain
+	bcs pfNo
+	iny
+	jsr cellPlain
+pfNo
+	rts
+
+cellPlain
+	lda (mapP),y
+	cmp #32
+	beq cpYes
+	cmp #128
+	beq cpYes
+	cmp #129
+	beq cpYes
+	sec
+	rts
+cpYes
+	clc
+	rts
+
+scatterRocks
+	ldx #0
+srLoop
+	txa
+	pha
+	jsr rnd
+	and #127
+	sta tmp
+	jsr rnd
+	and #31
+	sta tmpHi
+	lda tmpHi
+	jsr mapRowBase
+	ldy tmp
+	jsr cellPlain
+	bcs srSkip
+	lda #130
+	sta (mapP),y
+srSkip
+	pla
+	tax
+	inx
+	cpx #28
+	bne srLoop
 	rts
 
 ; ============================================================
 ; text
 ; ============================================================
-; A/Y = text lo/hi -> draw at row 0 col 0
+; A/Y = text lo/hi -> draw on row 0 of BOTH screens
 drawStatus
 	sta txtPtr
 	sty txtPtr+1
-	lda #<SCREEN
+	lda #<SCREENA
 	sta scrPtr
 	sta colPtr
-	lda #>SCREEN
+	lda #>SCREENA
 	sta scrPtr+1
 	clc
 	adc #$d4
 	sta colPtr+1
+	jsr drawText
+	lda #<SCREENB
+	sta scrPtr
+	lda #>SCREENB
+	sta scrPtr+1
 	jmp drawText
 
-; A/Y = text lo/hi -> draw centred-ish on row 12
+; A/Y = text lo/hi -> draw centred-ish on row 12 of whichever
+; buffer will be visible next frame (a flip may be pending)
 drawMsg
 	sta txtPtr
 	sty txtPtr+1
 	ldx #12
-	jsr setRowPtrs
-	lda scrPtr
+	lda rowLo,x
 	clc
 	adc #5
 	sta scrPtr
-	lda colPtr
-	clc
-	adc #5
 	sta colPtr
+	lda visBuf
+	eor flipReq
+	tay
+	lda scrOffTab,y
+	clc
+	adc rowHi,x
+	sta scrPtr+1
+	lda rowHi,x
+	clc
+	adc #$d4
+	sta colPtr+1
 	; fall through
 drawText
 	ldy #0
@@ -1344,63 +1688,67 @@ dtxStore
 dtxDone
 	rts
 
-; refresh the NEXT and GOT digits on status line A
+; refresh the NEXT and GOT digits on status line A (both screens)
 drawStatusDigits
 	lda gateOpen
 	bne dsdDone
 	lda nextNum
 	clc
 	adc #48
-	sta SCREEN+13
+	sta SCREENA+13
+	sta SCREENB+13
 	lda gotCount
 	clc
 	adc #48
-	sta SCREEN+20
+	sta SCREENA+20
+	sta SCREENB+20
 dsdDone
 	rts
 
 ; ============================================================
 ; data
 ; ============================================================
-; screen row base addresses ($0400 + 40*row)
+; screen row base addresses ($0400 + 40*row); add scrOff for the
+; active buffer, +$d4 to the high byte for color RAM
 rowLo
-	dc.b <(SCREEN+0),<(SCREEN+40),<(SCREEN+80),<(SCREEN+120),<(SCREEN+160)
-	dc.b <(SCREEN+200),<(SCREEN+240),<(SCREEN+280),<(SCREEN+320),<(SCREEN+360)
-	dc.b <(SCREEN+400),<(SCREEN+440),<(SCREEN+480),<(SCREEN+520),<(SCREEN+560)
-	dc.b <(SCREEN+600),<(SCREEN+640),<(SCREEN+680),<(SCREEN+720),<(SCREEN+760)
-	dc.b <(SCREEN+800),<(SCREEN+840),<(SCREEN+880),<(SCREEN+920),<(SCREEN+960)
+	dc.b <(SCREENA+0),<(SCREENA+40),<(SCREENA+80),<(SCREENA+120),<(SCREENA+160)
+	dc.b <(SCREENA+200),<(SCREENA+240),<(SCREENA+280),<(SCREENA+320),<(SCREENA+360)
+	dc.b <(SCREENA+400),<(SCREENA+440),<(SCREENA+480),<(SCREENA+520),<(SCREENA+560)
+	dc.b <(SCREENA+600),<(SCREENA+640),<(SCREENA+680),<(SCREENA+720),<(SCREENA+760)
+	dc.b <(SCREENA+800),<(SCREENA+840),<(SCREENA+880),<(SCREENA+920),<(SCREENA+960)
 rowHi
-	dc.b >(SCREEN+0),>(SCREEN+40),>(SCREEN+80),>(SCREEN+120),>(SCREEN+160)
-	dc.b >(SCREEN+200),>(SCREEN+240),>(SCREEN+280),>(SCREEN+320),>(SCREEN+360)
-	dc.b >(SCREEN+400),>(SCREEN+440),>(SCREEN+480),>(SCREEN+520),>(SCREEN+560)
-	dc.b >(SCREEN+600),>(SCREEN+640),>(SCREEN+680),>(SCREEN+720),>(SCREEN+760)
-	dc.b >(SCREEN+800),>(SCREEN+840),>(SCREEN+880),>(SCREEN+920),>(SCREEN+960)
+	dc.b >(SCREENA+0),>(SCREENA+40),>(SCREENA+80),>(SCREENA+120),>(SCREENA+160)
+	dc.b >(SCREENA+200),>(SCREENA+240),>(SCREENA+280),>(SCREENA+320),>(SCREENA+360)
+	dc.b >(SCREENA+400),>(SCREENA+440),>(SCREENA+480),>(SCREENA+520),>(SCREENA+560)
+	dc.b >(SCREENA+600),>(SCREENA+640),>(SCREENA+680),>(SCREENA+720),>(SCREENA+760)
+	dc.b >(SCREENA+800),>(SCREENA+840),>(SCREENA+880),>(SCREENA+920),>(SCREENA+960)
 
-; small trees (col,row of canopy-left; trunk sits one row below)
-N_TREES equ 6
-treeCol	dc.b 6,14,30,33,11,25
-treeRow	dc.b 6,15,6,17,10,20
+; $d018 per visible buffer (charset at $3800 -> index 7)
+d018Tab	dc.b $1e,$be           ; screens $0400 and $2c00
+; page offset of each buffer relative to SCREENA
+scrOffTab	dc.b 0,>(SCREENB-SCREENA)
 
-N_ROCKS equ 5
-rockCol	dc.b 4,28,17,35,9
-rockRow	dc.b 9,13,22,4,17
+; per-char colors for the custom tiles (indexed from CHAR_FIRST)
+; grass flower rock water apple canopy trunkL trunkR gate
+charColors	dc.b 5,7,12,14,2,5,9,9,9
 
-; pond (per drawn row: screen row, start col, length)
-pondRow	dc.b 20,21,22,23
-pondCol	dc.b 3,2,2,3
-pondLen	dc.b 6,8,8,6
+; ponds: (row,col,len) per drawn row
+N_PONDROWS equ 8
+pondRow	dc.b 24,25,26,27, 5,6,7,8
+pondCol	dc.b 9,8,8,9,     71,70,70,71
+pondLen	dc.b 6,8,8,6,     6,8,8,6
 
-; apples: fixed spots, shuffled numbers
-appleCol	dc.b 7,34,12,27,18
-appleRow	dc.b 3,8,19,17,5
+; apples: world cells spread across the meadow, shuffled numbers
+appleCol	dc.b 12,30,55,90,110
+appleRow	dc.b 4,26,15,7,27
 appleNum	dc.b 3,1,5,2,4
 ; working copies (apples get eaten)
 appleColW	dc.b 0,0,0,0,0
 appleRowW	dc.b 0,0,0,0,0
 appleNumW	dc.b 0,0,0,0,0
 
-statusA	dc.b "MEADOW  NEXT:1  GOT:0/5  FIRE=WHISTLE",0
-statusB	dc.b "MEADOW  GATE OPEN! RUN RIGHT  GOT:5/5",0
+statusA	dc.b "MEADOW  NEXT:1  GOT:0/5  FIRE=WHISTLE   ",0
+statusB	dc.b "MEADOW  GATE OPEN! RUN EAST  GOT:5/5    ",0
 msgCaught	dc.b "THE WOLF GOT YOU!  PRESS FIRE",0
 msgWin	dc.b "YOU ESCAPED THE MEADOW! PRESS FIRE",0
 
