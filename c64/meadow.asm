@@ -68,6 +68,11 @@ peterDir  equ $38          ; 0=down 1=up 2=left 3=right
 visCX     equ $39          ; coarse origin of the VISIBLE buffer
 visCY     equ $3a
 tmp2      equ $3b
+dirX      equ $3c          ; camera heading per axis: 1 / $ff / stale
+dirY      equ $3d
+renderSt  equ $3e          ; 0 idle, 1 half done, 2 ready (awaiting flip)
+rvFirst   equ $3f          ; renderPart params: first row, row count
+rvCount   equ $40
 mapP      equ $f5          ; ..$f6 world map pointer
 dstP      equ $f7          ; ..$f8 render destination
 colBufP   equ $36          ; ..$37 color buffer pointer (render + blast)
@@ -94,6 +99,8 @@ HUDPTR    equ $90          ; $2400/64
 CAMXMAXLO equ <704         ; camera pixel limit: world 1024 - 320 view
 CAMXMAXHI equ >704
 CAMYMAX   equ 56           ; world 256 - 200 (25 rendered rows)
+CAMCOLMAX equ 88           ; coarse camera cell limits
+CAMROWMAX equ 7
 
 ; ============================================================
 	org $0801
@@ -158,9 +165,16 @@ mainloop
 	sta visCX
 	lda camRow
 	sta visCY
+	; scroll + sprite registers must land in the border BEFORE
+	; the long color blast, or the top of the frame tears
+	jsr fineScroll
+	jsr updateSprites
 	jsr colorBlast
+	jmp mlTick
 mlNoFlip
 	jsr fineScroll
+	jsr updateSprites
+mlTick
 	jsr tick
 	jmp mainloop
 
@@ -361,6 +375,7 @@ tkDone
 tickPlay
 	jsr movePeter
 	jsr updateCamera
+	jsr scrollPlan
 	jsr checkPickup
 	jsr whistle
 	jsr moveWolf
@@ -385,10 +400,10 @@ tpNoWin
 	dec buzzTimer
 tpTimers
 	lda cooldown
-	beq tpSprites
+	beq tpDone
 	dec cooldown
-tpSprites
-	jmp updateSprites
+tpDone
+	rts                    ; sprites are refreshed at frame start
 
 readJoy
 	lda $dc00
@@ -616,6 +631,8 @@ updateCamera
 	cmp #130
 	bcs ucXHigh
 	; camX -= 2, floor 0
+	lda #$ff
+	sta dirX
 	lda camXLo
 	sec
 	sbc #2
@@ -633,6 +650,8 @@ ucXHigh
 	bcc ucVert
 ucFar
 	; camX += 2, ceiling 704
+	lda #1
+	sta dirX
 	lda camXLo
 	clc
 	adc #2
@@ -660,6 +679,8 @@ ucVert
 	cmp #72
 	bcs ucYHigh
 ucYLow
+	lda #$ff
+	sta dirY
 	lda camY
 	sec
 	sbc #2
@@ -667,10 +688,12 @@ ucYLow
 	lda #0
 ucYSet
 	sta camY
-	jmp ucCoarse
+	rts
 ucYHigh
 	cmp #121
-	bcc ucCoarse
+	bcc ucDone
+	lda #1
+	sta dirY
 	lda camY
 	clc
 	adc #2
@@ -679,8 +702,17 @@ ucYHigh
 	lda #CAMYMAX
 ucYSet2
 	sta camY
-ucCoarse
-	; did the camera cross a tile boundary? -> re-render
+ucDone
+	rts
+
+; ============================================================
+; scroll planner: runs every play tick.  Predicts which tile the
+; camera is drifting into and renders that view into the back
+; buffer in two half-frame slices, so the flip is ready the
+; moment the boundary is crossed - no dropped frames, no pops.
+; ============================================================
+scrollPlan
+	; actual coarse camera cell -> tmpLo/tmpHi
 	lda camXLo
 	sta tmpLo
 	lda camXHi
@@ -696,27 +728,136 @@ ucCoarse
 	lsr
 	lsr
 	sta tmpHi              ; camY>>3 (0..7)
+	; ---- desired X (newXLo) ----
 	lda tmpLo
+	cmp visCX
+	bne spDesXset          ; already crossed / teleported
+	lda camXLo
+	and #7
+	cmp #4
+	bcc spXlow
+	lda dirX               ; drifting right, past mid-tile
+	cmp #1
+	bne spDesXvis
+	lda visCX
+	cmp #CAMCOLMAX
+	bcs spDesXvis
+	lda visCX
+	clc
+	adc #1
+	jmp spDesXset
+spXlow
+	lda dirX               ; drifting left, before mid-tile
+	cmp #$ff
+	bne spDesXvis
+	lda visCX
+	beq spDesXvis
+	sec
+	sbc #1
+	jmp spDesXset
+spDesXvis
+	lda visCX
+spDesXset
+	sta newXLo
+	; ---- desired Y (newXHi) ----
+	lda tmpHi
+	cmp visCY
+	bne spDesYset
+	lda camY
+	and #7
+	cmp #4
+	bcc spYlow
+	lda dirY
+	cmp #1
+	bne spDesYvis
+	lda visCY
+	cmp #CAMROWMAX
+	bcs spDesYvis
+	lda visCY
+	clc
+	adc #1
+	jmp spDesYset
+spYlow
+	lda dirY
+	cmp #$ff
+	bne spDesYvis
+	lda visCY
+	beq spDesYvis
+	sec
+	sbc #1
+	jmp spDesYset
+spDesYvis
+	lda visCY
+spDesYset
+	sta newXHi
+	; ---- anything to prepare? ----
+	lda newXLo
+	cmp visCX
+	bne spWork
+	lda newXHi
+	cmp visCY
+	bne spWork
+	lda #0                 ; view is current: cancel pending work
+	sta renderSt
+	sta flipReq
+	rts
+spWork
+	lda renderSt
+	beq spStart
+	lda newXLo             ; retarget if the prediction moved
 	cmp camCol
-	bne ucRender
+	bne spStart
+	lda newXHi
+	cmp camRow
+	bne spStart
+	lda renderSt
+	cmp #1
+	bne spGate
+	lda #13                ; second half of the back buffer
+	sta rvFirst
+	lda #12
+	sta rvCount
+	jsr renderPart
+	lda #2
+	sta renderSt
+spGate
+	lda renderSt
+	cmp #2
+	bne spDone
+	lda tmpLo              ; flip once the camera actually enters
+	cmp camCol             ; the prepared tile
+	bne spDone
 	lda tmpHi
 	cmp camRow
-	bne ucRender
+	bne spDone
+	inc flipReq
+	lda #0
+	sta renderSt
+spDone
 	rts
-ucRender
-	lda tmpLo
+spStart
+	lda newXLo
 	sta camCol
-	lda tmpHi
+	lda newXHi
 	sta camRow
-	jmp renderView
+	lda #0
+	sta rvFirst
+	lda #13                ; first half this tick
+	sta rvCount
+	jsr renderPart
+	lda #1
+	sta renderSt
+	rts
 
 ; ============================================================
 ; render the 40x24 view into the OFF-SCREEN buffer + color
 ; buffer, then request a flip.  Never touches the visible screen.
 ; ============================================================
-renderView
-	; dest = inactive screen, all 25 rows (the HUD lives in
-	; border sprites now, so the whole screen scrolls)
+; render rvCount rows starting at view row rvFirst into the
+; OFF-SCREEN buffer + color buffer, from the map at camCol/camRow.
+; Split into halves by the scroll planner so a slice always fits
+; inside one frame's spare CPU - no dropped ticks.
+renderPart
 	lda visBuf
 	eor #1
 	tax
@@ -730,9 +871,32 @@ renderView
 	sta colBufP
 	lda #>COLORBUF
 	sta colBufP+1
+	; advance both destinations by rvFirst*40
+	ldx rvFirst
+	beq rpSkip
+rpAdv
+	lda dstP
+	clc
+	adc #40
+	sta dstP
+	bcc rpA1
+	inc dstP+1
+rpA1
+	lda colBufP
+	clc
+	adc #40
+	sta colBufP
+	bcc rpA2
+	inc colBufP+1
+rpA2
+	dex
+	bne rpAdv
+rpSkip
 	lda camRow
+	clc
+	adc rvFirst
 	sta tmp                ; current world row
-	ldx #25
+	ldx rvCount
 rvRow
 	txa
 	pha
@@ -771,6 +935,17 @@ rvD2
 	tax
 	dex
 	bne rvRow
+	rts
+
+; full synchronous render + flip request (level build/reset)
+renderView
+	lda #0
+	sta rvFirst
+	lda #25
+	sta rvCount
+	jsr renderPart
+	lda #0
+	sta renderSt
 	inc flipReq
 	rts
 
@@ -898,12 +1073,84 @@ cpCollect
 	inc gateOpen
 	lda #7                 ; the gate lights up yellow
 	sta COLTAB+GATE_CH
+	jsr paintGateVisible
 	lda #<hudGate          ; "GO EAST!"
 	ldy #>hudGate
 	jsr renderHud
 cpRedraw
 	jsr updateHudDigits
-	jmp renderView
+	; erase the apple straight off the visible buffer, and let
+	; any in-flight back-buffer render restart from the new map
+	lda renderSt
+	beq cpErase
+	lda #0
+	sta renderSt
+cpErase
+	lda lastRow
+	sec
+	sbc visCY
+	cmp #25
+	bcs cpEraseDone        ; not on screen
+	tax
+	lda tmp                ; apple's base column
+	sec
+	sbc visCX
+	cmp #40
+	bcs cpEraseDone
+	pha
+	lda rowLo,x
+	sta scrPtr
+	ldy visBuf
+	lda scrOffTab,y
+	clc
+	adc rowHi,x
+	sta scrPtr+1
+	pla
+	tay
+	lda #32
+	sta (scrPtr),y
+	iny
+	cpy #40
+	bcs cpEraseDone
+	sta (scrPtr),y
+cpEraseDone
+	rts
+
+; when the gate opens, recolor any of its cells already on screen
+paintGateVisible
+	lda #126
+	sec
+	sbc visCX
+	cmp #40
+	bcs pgvDone            ; gate not in view
+	sta tmp2               ; screen column of the gate's left half
+	ldx #12                ; world rows 12..17
+pgvRow
+	txa
+	sec
+	sbc visCY
+	cmp #25
+	bcs pgvNext
+	tay
+	lda rowLo,y
+	sta colPtr
+	lda rowHi,y
+	clc
+	adc #$d4
+	sta colPtr+1
+	ldy tmp2
+	lda #7
+	sta (colPtr),y
+	iny
+	cpy #40
+	bcs pgvNext
+	sta (colPtr),y
+pgvNext
+	inx
+	cpx #18
+	bne pgvRow
+pgvDone
+	rts
 
 ; ============================================================
 ; whistle: FIRE stuns the wolf, then needs a long recharge
@@ -1443,6 +1690,9 @@ buildLevel
 	sta moving
 	sta wolfFace
 	sta peterDir           ; facing the player
+	sta dirX
+	sta dirY
+	sta renderSt
 	lda #1
 	sta nextNum
 	; restore the hud line's digits and show it
