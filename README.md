@@ -266,6 +266,48 @@ escape through the gate at the far east end. Joystick in port 2.
 
 ![C64 Meadow](c64/screenshot.png)
 
+## 🎮 Commander X16 port (all chapters)
+
+`x16/` holds a from-scratch **65C02 assembly** port for the
+[Commander X16](https://www.commanderx16.com/) — and where the C64 got one level,
+the X16's extra muscle (8 MHz CPU, the VERA video chip, a real YM2151 FM synth)
+carries **the whole storybook**: all six chapters plus **Endless Dusk**, cycling
+through the *Storybook*, *Wild* (autumn) and *Prokofiev* (winter) tiers.
+
+- **Run it:** `x16emu -prg x16\build\PETER.PRG -run` (emulator r49+). Arrows move,
+  `Z`/`Space` acts, `X` whistles, `Shift` tip-toes, `S` drops the rope, `P` pauses;
+  Left/Right on the title picks a chapter. Leave the title alone a few seconds and
+  a self-playing **attract demo** takes over.
+- **The worlds** are up to 2048 px wide and live entirely in VRAM as hardware
+  tile maps — the camera is two scroll registers, so scrolling costs nothing and
+  runs pixel-smooth at 60 fps. The whole cast walks at once: Peter (four facings),
+  the two-tile-wide wolf with **crouch-telegraph and pounce frames**, the ginger
+  cat with a stalking creep, bird, duck, Grandfather, the hunter patrol, plus
+  numbered apples, butterflies, fireflies, falling leaves or snow — VERA's 128
+  hardware sprites soak it all up, and right-facing frames are just the h-flip bit.
+- **Light is a palette.** Day, golden afternoon, blue dusk and night are 16-color
+  palette banks; the Great Chase **crossfades** between them as you run east, and
+  on Grandfather's Gate the darkness is real: every visible tile picks one of three
+  palette banks **by its distance to Peter each frame**, a per-tile firefly
+  lantern circle in hardware colors. Autumn and winter recolor the same art for
+  the later tiers (winter swaps in snow-capped pines).
+- **Prokofiev on an FM chip:** the same leitmotif tables as the web game, played
+  on the YM2151 with a patch per character — strings for Peter, oboe for the duck,
+  flute for the bird, clarinet, bassoon, horns, and the Hunters' March for the
+  Triumphal Procession. Effects (whistle, growls, yelps, the snare snapping shut)
+  run on VERA's PSG so they never steal a music voice.
+- **The full story arc**: numbered apples in order, the oak snare, rock-searching
+  for Grandfather's rope, the wolf hoisted **upside-down and swinging** in the
+  capture scene, the letterboxed parade with confetti, and the curtain call.
+- **Build:** `x16\build.ps1` — Python turns the ASCII art into VERA tile/sprite
+  data and the leitmotifs into YM2151 note streams, then cc65's `ca65`/`ld65`
+  produce a single self-contained `PETER.PRG` (no asset files to load). Drop the
+  [cc65 snapshot](https://cc65.github.io/) into `x16/bin/cc65/` and the
+  [x16 emulator](https://github.com/X16Community/x16-emulator/releases) into
+  `x16/bin/x16emu/`.
+
+![X16 — Grandfather's Gate by firefly light](x16/screenshot.png)
+
 ## 🛠️ Built with
 
 Plain HTML5 Canvas + a tiny WebAudio synth. No build step, no dependencies.
