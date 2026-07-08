@@ -233,14 +233,25 @@ Both Peter and the wolf are drawn with shaded, gradient-lit sprites (rosy cheeks
 a tasseled cap for Peter; a two-tone muzzle, pointed ears, bushy tail and glowing eyes
 for the wolf) rather than flat shapes, to match the polish of the meadow scenery.
 
-## 🕹️ Commodore 64 port (Level 1)
+## 🕹️ Commodore 64 port (all six chapters)
 
-`c64/` holds a from-scratch 6502 assembly port of Level 1, **The Meadow**, for real
-C64 hardware (or VICE). Roam a **1024×256-pixel scrolling meadow** (about 3 screens
-wide) gathering the numbered apples in order, whistle (FIRE) to stun the wolf, then
-escape through the gate at the far east end. Joystick in port 2.
+`c64/` holds a from-scratch 6502 assembly port of **the whole story** for real
+C64 hardware (or VICE): six chapters across the same **1024×256-pixel scrolling
+meadow** engine, each with its own light, music and goal. Gather the numbered
+apples and escape the gate; save the **bird** from the ginger **cat** and carry
+it to the old oak; lead the **duck** to the pond at blue dusk; search the rocks
+by night for **Grandfather's rope** and set the snare; walk Grandpa home through
+the dark to his gate; and finally **run west** with the wolf at your heels and
+lure him under the waiting noose. Win a chapter and the next begins; FIRE
+whistles (or searches, or springs), joystick in port 2.
 
 - **Run it:** load `c64/build/meadow.d64` (or `meadow.prg`) in VICE — `x64sc build\meadow.d64`.
+- **The cast:** the wolf and the web-vector **cat** are two multicolor sprites
+  side by side with a committed **dodge-and-slide** pathfinder that picks its way
+  around trees and ponds; the bird, duck and Grandpa are single-sprite friends
+  who wait to be found, then follow two steps behind you (one HUD sprite was
+  traded away to make room — the status line runs on four). At night the wolf
+  is invisible beyond the fireflies' little circle of light.
 - **Tech:** the world lives as a 128×32 tile map in RAM and scrolls
   **pixel-smooth at a locked 50 fps**: the VIC's fine-scroll registers
   (`$d016`/`$d011`, in 38-column + 24-row mode to hide the seams) glide between
@@ -258,13 +269,17 @@ escape through the gate at the far east end. Joystick in port 2.
   whole map — on-screen or off —
   and picks his way around obstacles; the scenery is a custom character set overlaid
   on the ROM font; raster-IRQ-synced 50 Hz game loop.
-- **Music:** Prokofiev on the SID — Peter's theme loops on voice 2 (pulse), and when
-  the wolf gets close his theme takes over (sawtooth) until you shake him off. The
-  note tables are generated from the same `tools/themes_js.json` leitmotifs the web
+- **Music:** Prokofiev on the SID — every chapter opens with its own leitmotif on
+  voice 2 (Peter, the bird, the duck, the wolf, Grandfather, the Hunters' March),
+  and when the foe gets close his theme takes over (the cat's creeping clarinet in
+  chapter 2, the wolf's horns everywhere else) until you shake him off. The note
+  tables are generated from the same `tools/themes_js.json` leitmotifs the web
   game uses. Sound effects run on voice 1.
 - **Build:** `c64\build.ps1` — Python converts the ASCII sprite/char art in `c64/art/`
   into dasm includes, [dasm](https://github.com/dasm-assembler/dasm) assembles
-  `meadow.asm` (drop `dasm.exe` into `c64/bin/`), and VICE's `c1541` packs the disk image.
+  `meadow.asm` (drop `dasm.exe` into `c64/bin/`), and VICE's `c1541` packs the disk
+  image. `-StartLevel n` boots straight into a chapter; `-Auto` builds a
+  self-playing autopilot version (how every chapter got verified headlessly in VICE).
 
 ![C64 Meadow](c64/screenshot.png)
 

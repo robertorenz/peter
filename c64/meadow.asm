@@ -73,6 +73,43 @@ dirY      equ $3d
 renderSt  equ $3e          ; 0 idle, 1 half done, 2 ready (awaiting flip)
 rvFirst   equ $3f          ; renderPart params: first row, row count
 rvCount   equ $40
+level     equ $21          ; 0..5 = the six chapters
+frXLo     equ $33          ; friend (bird/duck/grandpa) world pos
+frXHi     equ $41
+frY       equ $42
+frState   equ $43          ; 0=waiting 1=following peter
+frFace    equ $44          ; 0=left 1=right
+frType    equ $45          ; 0=none 1=bird 2=duck 3=grandpa
+carryRope equ $46          ; ch4: rope found, carrying it
+snareArm  equ $47          ; snare armed at the oak
+rockN     equ $48          ; recorded rocks this level
+ropeRock  equ $49          ; which rock hides the rope
+preyXLo   equ $4a          ; who the foe hunts this frame
+preyXHi   equ $4b
+preyY     equ $4c
+d015m     equ $4d          ; sprite enable mask under construction
+hudMsgT   equ $4e          ; frames until the HUD line is restored
+prevJoy   equ $4f
+fireEdge  equ $50          ; FIRE newly pressed this frame
+autoOn    equ $51          ; autopilot active (test builds / attract)
+autGXLo   equ $52          ; autopilot goal
+autGXHi   equ $53
+autGY     equ $54
+autSnapX  equ $55          ; unstick: position snapshot
+autSnapY  equ $56
+autStuck  equ $57          ; frames since the snapshot moved
+foeA      equ $58          ; ..$59 foe sprite bases (front half), by face
+foeB      equ $5a          ; ..$5b rear half
+foeCol    equ $5c          ; foe sprite color
+frBase    equ $5d          ; friend sprite pointer base (left-facing)
+musDanger equ $5e          ; 1 = the foe's theme is playing
+autWander equ $5f          ; autopilot detour frames left
+autDir    equ $60          ; detour joystick bits
+autFlip   equ $61          ; alternate detour side per attempt
+wolfSlip  equ $62          ; foe horizontal-dodge side (sticky)
+wolfDodge equ $63          ; foe committed-dodge frames left
+wolfDDir  equ $64          ; dodge direction (0=up/left 1=down/right)
+wolfDAxis equ $65          ; dodge axis (0=vertical 1=horizontal)
 mapP      equ $f5          ; ..$f6 world map pointer
 dstP      equ $f7          ; ..$f8 render destination
 colBufP   equ $36          ; ..$37 color buffer pointer (render + blast)
@@ -107,8 +144,20 @@ CAMROWMAX equ 7
 	; 10 SYS 2061
 	dc.b $0b,$08,$0a,$00,$9e,"2061",$00,$00,$00
 
+	IFNCONST START_LEVEL
+START_LEVEL equ 0
+	ENDIF
+
 start
 	sei
+	lda #START_LEVEL
+	sta level
+	lda #0
+	sta autoOn
+	IFCONST AUTO
+	lda #1
+	sta autoOn             ; test builds: the game plays itself
+	ENDIF
 	jsr copyCharset
 	; blank the HUD sprite block (glyphs only fill rows 0-7)
 	ldx #0
@@ -296,8 +345,8 @@ initVic
 	lda #13
 	sta $d021              ; light green meadow
 	lda #%11111111
-	sta $d015              ; 0 peter, 1/2 wolf, 3-7 border HUD
-	lda #%00000111
+	sta $d015              ; 0 peter, 1/2 foe, 3 friend, 4-7 border HUD
+	lda #%00001111
 	sta $d01c              ; game sprites multicolor, HUD hires
 	lda #0
 	sta $d01d
@@ -312,22 +361,23 @@ initVic
 	sta $d028              ; wolf: dark grey
 	sta $d029
 	; HUD sprites: fixed in the top border, white, 24px apart
-	ldx #4
+	; (sprites 4-7; sprite 3 belongs to the friend)
+	ldx #3
 ivHud
 	lda #1
-	sta $d02a,x            ; colors of sprites 3-7
+	sta $d02b,x            ; colors of sprites 4-7
 	txa
 	asl
-	tay                    ; $d006+2n / $d007+2n
+	tay                    ; $d008+2n / $d009+2n
 	lda hudXTab,x
-	sta $d006,y
+	sta $d008,y
 	lda #57                ; floats over the top of the playfield
-	sta $d007,y            ; (the VIC blanks sprites in the border)
+	sta $d009,y            ; (the VIC blanks sprites in the border)
 	txa
 	clc
 	adc #HUDPTR
-	sta SCREENA+$3fb,x     ; pointers in both buffers
-	sta SCREENB+$3fb,x
+	sta SCREENA+$3fc,x     ; pointers in both buffers
+	sta SCREENB+$3fc,x
 	dex
 	bpl ivHud
 	rts
@@ -368,6 +418,16 @@ tkMsgFire
 	lda joy
 	and #%00010000
 	beq tkDone
+	lda state              ; escaped: on to the next chapter
+	cmp #2
+	bne tkRetry
+	inc level
+	lda level
+	cmp #6
+	bcc tkRetry
+	lda #0
+	sta level
+tkRetry
 	jsr buildLevel
 tkDone
 	rts
@@ -376,8 +436,7 @@ tickPlay
 	jsr movePeter
 	jsr updateCamera
 	jsr scrollPlan
-	jsr checkPickup
-	jsr whistle
+	jsr levelTick          ; pickups, friend, FIRE action, win checks
 	jsr moveWolf
 	jsr checkCaught
 	lda winFlag
@@ -388,8 +447,9 @@ tickPlay
 	sta state
 	lda #40
 	sta msgTimer
-	lda #<msgWin
-	ldy #>msgWin
+	ldx level
+	lda msgWinLo,x
+	ldy msgWinHi,x
 	jsr drawMsg
 	lda #<sfxWin
 	ldx #>sfxWin
@@ -410,6 +470,17 @@ readJoy
 	eor #$ff
 	and #$1f
 	sta joy
+	lda autoOn
+	beq rjEdge
+	jsr autoPilot          ; demo/test: synthesize the stick
+rjEdge
+	lda prevJoy
+	eor #$ff
+	and joy
+	and #%00010000
+	sta fireEdge           ; FIRE newly pressed this frame
+	lda joy
+	sta prevJoy
 	rts
 
 ; ============================================================
@@ -581,6 +652,8 @@ mapRowBase
 checkBlocked
 	cmp #GATE_CH
 	beq cbGate
+	ldx autoOn
+	bne cbClear            ; the demo ghost walks where it pleases
 	cmp #130
 	bcc cbClear            ; grass, digits, space
 	cmp #APPLE_CH
@@ -1181,28 +1254,136 @@ moveWolf
 	dec stun
 	rts
 mwGo
+	lda level
+	cmp #5
+	beq mwMove             ; the chase: he runs every frame
 	lda frame
 	and #1
-	bne mwMove             ; wolf moves every other frame: half peter's pace
+	bne mwMove             ; else every other frame: half peter's pace
 	rts
 mwMove
-	; ---- X axis ----
+	; ---- committed dodge: slide along the blocker, and bail the
+	; moment the blocked axis frees up ----
+	lda wolfDodge
+	beq mwSeek
+	dec wolfDodge
+	lda wolfDAxis
+	bne mwDodgeH
+	; vertical slide
+	lda wolfDDir
+	beq mwDodU
+	lda wolfY
+	cmp #235
+	bcs mwDodTX
+	inc wolfY
+	jmp mwDodTX
+mwDodU
+	lda wolfY
+	beq mwDodTX
+	dec wolfY
+mwDodTX
+	jsr mwTryX
+	bcs mwDodOut           ; still blocked: keep sliding
+	lda #0
+	sta wolfDodge
+mwDodOut
+	rts
+mwDodgeH
+	; horizontal slide
+	lda wolfDDir
+	beq mwDodL
+	inc wolfXLo
+	bne mwDodTY
+	inc wolfXHi
+	jmp mwDodTY
+mwDodL
 	lda wolfXLo
-	cmp peterXLo
-	bne mwXmove
+	sec
+	sbc #1
+	sta wolfXLo
 	lda wolfXHi
-	cmp peterXHi
-	beq mwYAxis            ; same X
-mwXmove
+	sbc #0
+	sta wolfXHi
+	bpl mwDodTY
+	lda #0
+	sta wolfXLo
+	sta wolfXHi
+mwDodTY
+	jsr mwTryY
+	bcs mwDodOut2
+	lda #0
+	sta wolfDodge
+mwDodOut2
+	rts
+
+mwSeek
+	jsr mwTryX
+	bcc mwSeekY            ; moved, or already in line
+	; X blocked: commit to a vertical slide
+	lda #40
+	sta wolfDodge
+	lda #0
+	sta wolfDAxis
+	lda wolfY
+	cmp preyY
+	beq mwSkEdge
+	bcc mwSkDn             ; prey below: slide down
+	lda #0
+	sta wolfDDir
+	jmp mwSeekY
+mwSkDn
+	lda #1
+	sta wolfDDir
+	jmp mwSeekY
+mwSkEdge
+	lda wolfY
+	cmp #128
+	bcs mwSkUp
+	lda #1
+	sta wolfDDir
+	jmp mwSeekY
+mwSkUp
+	lda #0
+	sta wolfDDir
+mwSeekY
+	jsr mwTryY
+	bcc mwSeekDone
+	; Y blocked while X is settled: horizontal slide, alternating
+	; sides between attempts so he tries both ways round
+	lda wolfDodge
+	bne mwSeekDone         ; a vertical slide is already running
+	lda #40
+	sta wolfDodge
+	lda #1
+	sta wolfDAxis
+	lda wolfSlip
+	sta wolfDDir
+	eor #1
+	sta wolfSlip
+mwSeekDone
+	rts
+
+; step X one pixel toward the prey.  C=0 moved (or already level /
+; at the world edge), C=1 the way is blocked.
+mwTryX
+	lda wolfXLo
+	cmp preyXLo
+	bne mwtxGo
+	lda wolfXHi
+	cmp preyXHi
+	bne mwtxGo
+	clc                    ; already level: nothing to do
+	rts
+mwtxGo
 	lda wolfXLo
 	sta newXLo
 	lda wolfXHi
 	sta newXHi
 	lda wolfXLo
-	cmp peterXLo
+	cmp preyXLo
 	lda wolfXHi
-	sbc peterXHi
-	bcc mwRight            ; wolf < peter
+	sbc preyXHi
+	bcc mwtxR              ; wolf < prey
 	lda newXLo
 	sec
 	sbc #1
@@ -1212,23 +1393,24 @@ mwXmove
 	sta newXHi
 	lda #0
 	sta wolfFace
-	jmp mwXtry
-mwRight
+	jmp mwtxTry
+mwtxR
 	inc newXLo
-	bne mwFaceR
+	bne mwtxFace
 	inc newXHi
-mwFaceR
+mwtxFace
 	lda #1
 	sta wolfFace
 	; never past X=976: his probe must stay inside the map
 	lda newXHi
 	cmp #3
-	bne mwXtry
+	bne mwtxTry
 	lda newXLo
 	cmp #$d1
-	bcs mwYAxis
-mwXtry
-	; probe the wolf's centre: getCell adds the +12 itself
+	bcc mwtxTry
+	clc                    ; pinned at the edge: treat as settled
+	rts
+mwtxTry
 	lda newXLo
 	clc
 	adc #24
@@ -1239,38 +1421,35 @@ mwXtry
 	lda wolfY
 	jsr getCell
 	jsr checkBlockedWolf
-	bcs mwXblocked
+	bcs mwtxNo
 	lda newXLo
 	sta wolfXLo
 	lda newXHi
 	sta wolfXHi
-	jmp mwYAxis
-mwXblocked
-	; something in the way and already level with peter: sidestep
-	lda wolfY
-	cmp peterY
-	bne mwYAxis
-	cmp #128
-	bcs mwSideUp
-	inc wolfY
+	clc
 	rts
-mwSideUp
-	dec wolfY
+mwtxNo
+	sec
 	rts
-mwYAxis
+
+; step Y one pixel toward the prey.  C=0 moved or level, C=1 blocked.
+mwTryY
 	lda wolfY
-	cmp peterY
-	beq mwDone
-	bcc mwDown
+	cmp preyY
+	bne mwtyGo
+	clc
+	rts
+mwtyGo
+	bcc mwtyDn
 	lda wolfY
 	sec
 	sbc #1
-	jmp mwYtry
-mwDown
+	jmp mwtyTry
+mwtyDn
 	lda wolfY
 	clc
 	adc #1
-mwYtry
+mwtyTry
 	sta tmp
 	lda wolfXLo
 	clc
@@ -1282,33 +1461,13 @@ mwYtry
 	lda tmp
 	jsr getCell
 	jsr checkBlockedWolf
-	bcs mwYblocked
+	bcs mwtyNo
 	lda tmp
 	sta wolfY
+	clc
 	rts
-mwYblocked
-	; blocked and vertically aligned: sidestep in X
-	lda wolfXLo
-	cmp peterXLo
-	bne mwDone
-	lda wolfXHi
-	cmp peterXHi
-	bne mwDone
-	lda wolfXHi
-	bne mwSideL
-	inc wolfXLo
-	bne mwDone
-	inc wolfXHi
-	rts
-mwSideL
-	lda wolfXLo
+mwtyNo
 	sec
-	sbc #1
-	sta wolfXLo
-	lda wolfXHi
-	sbc #0
-	sta wolfXHi
-mwDone
 	rts
 
 ; |peter centre - wolf centre| -> tmpLo/Hi (16 bit)
@@ -1372,8 +1531,9 @@ checkCaught
 	sta state
 	lda #40
 	sta msgTimer
-	lda #<msgCaught
-	ldy #>msgCaught
+	ldx level
+	lda msgCaughtLo,x
+	ldy msgCaughtHi,x
 	jsr drawMsg
 	lda #<sfxCaught
 	ldx #>sfxCaught
@@ -1387,6 +1547,8 @@ ccDone
 updateSprites
 	; screen = world - camera + K, where K absorbs the fine-
 	; scroll register convention: +31 in x, +54 in y
+	lda #%11110001         ; peter + HUD 4-7 always; foe/friend opt in
+	sta d015m
 	; ---- peter (always on screen: the camera follows him) ----
 	lda peterXLo
 	sec
@@ -1409,7 +1571,21 @@ updateSprites
 	clc
 	adc #54
 	sta $d001
-	; ---- wolf: visible only when his window overlaps the view ----
+	; ---- foe: visible only when his window overlaps the view ----
+	; ch5 is night: the wolf is unseen beyond the fireflies' glow
+	lda level
+	cmp #4
+	bne usFoeCalc
+	jsr absDx
+	lda tmpHi
+	bne usWolfHide
+	lda tmpLo
+	cmp #96
+	bcs usWolfHide
+	jsr absDy
+	cmp #88
+	bcs usWolfHide
+usFoeCalc
 	lda wolfXLo
 	sec
 	sbc camXLo
@@ -1422,7 +1598,7 @@ updateSprites
 	cmp #1
 	bne usWolfHide         ; 512+ px away
 	lda newXLo
-	cmp #34
+	cmp #58
 	bcs usWolfHide         ; too far right
 usWolfY
 	lda wolfY
@@ -1458,11 +1634,12 @@ usWolfY
 	asl
 	ora tmp
 	sta tmp
-	lda #%11111111
-	bne usEnable
+	lda d015m
+	ora #%00000110
+	sta d015m
 usWolfHide
-	lda #%11111001
-usEnable
+	jsr drawFriend         ; sprite 3 (sets its d015m/d010 bits)
+	lda d015m
 	sta $d015
 	lda tmp
 	sta $d010
@@ -1483,24 +1660,24 @@ usPeterSet
 	lda tmp2
 	sta SCREENA+$3f8
 	sta SCREENB+$3f8
-	; ---- wolf pointers: base by facing, +4 for the gait frame ----
+	; ---- foe pointers: base by facing, +4 for the gait frame ----
 	lda frame
 	and #8
 	lsr                    ; 0 or 4
 	sta tmpHi
 	ldx wolfFace           ; 0=left 1=right
-	lda wolfBaseA,x
+	lda foeA,x
 	clc
 	adc tmpHi
 	sta SCREENA+$3f9
 	sta SCREENB+$3f9
-	lda wolfBaseB,x
+	lda foeB,x
 	clc
 	adc tmpHi
 	sta SCREENA+$3fa
 	sta SCREENB+$3fa
-	; stunned wolf flashes white
-	ldx #11
+	; stunned foe flashes white
+	ldx foeCol
 	lda stun
 	beq usWolfCol
 	lda frame
@@ -1587,6 +1764,9 @@ musicSetup
 
 musicStart
 	lda #0
+	sta musDanger
+	ldx level
+	lda lvSong,x
 	sta musSong
 	tax
 	jsr musicSetup
@@ -1594,14 +1774,14 @@ musicStart
 	sta musTimer
 	rts
 
-; which song does the wolf's distance call for? -> A (0/1)
+; which song does the foe's distance call for? -> A (song index)
 musicDesired
 	jsr absDx
 	lda tmpHi
 	bne mdFar
 	jsr absDy
 	sta tmp
-	ldx musSong            ; thresholds widen while his theme plays
+	ldx musDanger          ; thresholds widen while his theme plays
 	lda tmpLo
 	cmp musDxThresh,x
 	bcs mdFar
@@ -1609,9 +1789,15 @@ musicDesired
 	cmp musDyThresh,x
 	bcs mdFar
 	lda #1
+	sta musDanger
+	ldx level
+	lda lvDanger,x
 	rts
 mdFar
 	lda #0
+	sta musDanger
+	ldx level
+	lda lvSong,x
 	rts
 
 musicTick
@@ -1669,13 +1855,21 @@ mtRts
 ; ============================================================
 buildLevel
 	jsr initColTab
+	ldx level
+	lda lvBg,x
+	sta $d021              ; the chapter's daylight
 	jsr mapClear
 	jsr scatterGrass
 	jsr drawPonds
+	lda level
+	bne blNoApples         ; numbered apples are chapter 1's game
 	jsr placeApples
+blNoApples
 	jsr drawOak
 	jsr drawGate
 	jsr scatterTrees
+	lda #0
+	sta rockN
 	jsr scatterRocks
 
 	; reset game state
@@ -1693,50 +1887,176 @@ buildLevel
 	sta dirX
 	sta dirY
 	sta renderSt
+	sta frState
+	sta frFace
+	sta carryRope
+	sta snareArm
+	sta hudMsgT
+	sta autStuck
+	sta autWander
+	sta wolfSlip
+	sta wolfDodge
 	lda #1
 	sta nextNum
-	; restore the hud line's digits and show it
+	; ch6: the snare hangs ready at the old oak
+	lda level
+	cmp #5
+	bne blNoSnare
+	lda #1
+	sta snareArm
+blNoSnare
+	; ch4: the rope hides under one of the rocks
+	lda level
+	cmp #3
+	bne blNoRope
+	jsr rnd
+	and #7
+blRopeMod
+	cmp rockN
+	bcc blRopeOk
+	sec
+	sbc rockN
+	jmp blRopeMod
+blRopeOk
+	sta ropeRock
+blNoRope
+	; the chapter's HUD line (ch1 restores its live digits first)
+	lda level
+	bne blHud
 	lda #49                ; '1'
-	sta hudLine+5
+	sta hudLine+2
 	lda #48                ; '0'
-	sta hudLine+12
-	lda #<hudLine
-	ldy #>hudLine
+	sta hudLine+9
+blHud
+	ldx level
+	lda lvHudLo,x
+	ldy lvHudHi,x
 	jsr renderHud
-	; positions: peter west of centre, wolf far east
-	lda #48
+	; spawns from the chapter tables
+	ldx level
+	lda lvPeterXLo,x
 	sta peterXLo
-	lda #0
+	lda lvPeterXHi,x
 	sta peterXHi
-	lda #140
+	lda lvPeterY,x
 	sta peterY
-	lda #<700
+	lda lvFoeXLo,x
 	sta wolfXLo
-	lda #>700
+	lda lvFoeXHi,x
 	sta wolfXHi
-	lda #60
+	lda lvFoeY,x
 	sta wolfY
-	lda #11
+	; foe skin: the grey wolf, or chapter 2's ginger cat
+	lda lvFoeCol,x
+	sta foeCol
 	sta $d028
 	sta $d029
-	; camera: pixel origin near peter, clamped to the world
+	lda lvFoeCat,x
+	beq blWolfSkin
+	lda #$95               ; cat frames (sprites2 block)
+	sta foeA
+	lda #$96
+	sta foeB
+	lda #$97
+	sta foeA+1
+	lda #$98
+	sta foeB+1
+	bne blFriend
+blWolfSkin
+	lda #SPRBASE+8
+	sta foeA
+	lda #SPRBASE+9
+	sta foeB
+	lda #SPRBASE+10
+	sta foeA+1
+	lda #SPRBASE+11
+	sta foeB+1
+blFriend
+	; the friend, if this chapter has one
+	ldx level
+	lda lvFriend,x
+	sta frType
+	beq blNoFriend
+	tay
+	lda frBaseTab-1,y
+	sta frBase
+	lda lvFriendCol,x
+	sta $d02a
+	lda lvFrXLo,x
+	sta frXLo
+	lda lvFrXHi,x
+	sta frXHi
+	lda lvFrY,x
+	sta frY
+blNoFriend
+	; prey defaults to peter until levelTick refines it
+	lda peterXLo
+	sta preyXLo
+	lda peterXHi
+	sta preyXHi
+	lda peterY
+	sta preyY
+	; camera: centre peter, clamped to the world
+	lda peterXLo
+	sec
+	sbc #160
+	sta camXLo
+	lda peterXHi
+	sbc #0
+	sta camXHi
+	bpl blCamCeil
 	lda #0
 	sta camXLo
 	sta camXHi
+blCamCeil
+	lda camXHi
+	cmp #CAMXMAXHI
+	bcc blCamCol
+	bne blCamCap
+	lda camXLo
+	cmp #CAMXMAXLO
+	bcc blCamCol
+blCamCap
+	lda #CAMXMAXLO
+	sta camXLo
+	lda #CAMXMAXHI
+	sta camXHi
+blCamCol
+	lda camXLo
+	sta tmpLo
+	lda camXHi
+	sta tmpHi
+	lsr tmpHi
+	ror tmpLo
+	lsr tmpHi
+	ror tmpLo
+	lsr tmpHi
+	ror tmpLo
+	lda tmpLo
 	sta camCol
 	sta visCX
-	lda #44                ; peterY 140 - 96 -> mid-window
+	lda peterY
+	sec
+	sbc #96
+	bcs blCamY
+	lda #0
+blCamY
+	cmp #CAMYMAX
+	bcc blCamY2
+	lda #CAMYMAX
+blCamY2
 	sta camY
 	lsr
 	lsr
 	lsr
-	sta camRow             ; 5
+	sta camRow
 	sta visCY
 	jsr musicStart
 	jsr renderView
 	jmp updateSprites
 
-; char -> color table, rebuilt each level (the gate entry mutates)
+; char -> color table, rebuilt each level (the gate entry mutates;
+; each chapter brings its own light)
 initColTab
 	ldx #0
 	lda #1                 ; default: white (text, digits)
@@ -1744,11 +2064,24 @@ ictFill
 	sta COLTAB,x
 	inx
 	bne ictFill
-	ldx #CHAR_COUNT-1
+	; per-chapter char colors: base = lvCharCol + level*9
+	lda level
+	asl
+	asl
+	asl
+	clc
+	adc level              ; *9
+	clc
+	adc #<lvCharCol
+	sta txtPtr
+	lda #>lvCharCol
+	adc #0
+	sta txtPtr+1
+	ldy #CHAR_COUNT-1
 ictPatch
-	lda charColors,x
-	sta COLTAB+CHAR_FIRST,x
-	dex
+	lda (txtPtr),y
+	sta COLTAB+CHAR_FIRST,y
+	dey
 	bpl ictPatch
 	rts
 
@@ -2038,6 +2371,17 @@ srLoop
 	bcs srSkip
 	lda #130
 	sta (mapP),y
+	; remember the first 8: chapter 4 hides the rope under one
+	ldx rockN
+	cpx #8
+	bcs srSkip
+	lda tmp
+	sta rockColW,x
+	lda tmpHi
+	sta rockRowW,x
+	lda #0
+	sta rockDoneW,x
+	inc rockN
 srSkip
 	pla
 	tax
@@ -2051,11 +2395,11 @@ srSkip
 ; hires sprites parked in the top border (immune to scrolling).
 ; Each sprite carries 3 glyphs copied from the charset.
 ; ============================================================
-; A/Y = 15-byte text lo/hi
+; A/Y = 12-byte text lo/hi
 renderHud
 	sta txtPtr
 	sty txtPtr+1
-	ldy #14
+	ldy #11
 rhChar
 	tya
 	pha
@@ -2102,18 +2446,18 @@ rhRow
 	bpl rhChar
 	rts
 
-; refresh the NEXT/GOT digits inside the live HUD string
+; refresh the NEXT/GOT digits inside the live HUD string (ch1)
 updateHudDigits
 	lda gateOpen
 	bne uhdDone
 	lda nextNum
 	clc
 	adc #48
-	sta hudLine+5
+	sta hudLine+2
 	lda gotCount
 	clc
 	adc #48
-	sta hudLine+12
+	sta hudLine+9
 	lda #<hudLine
 	ldy #>hudLine
 	jmp renderHud
@@ -2185,9 +2529,7 @@ d018Tab	dc.b $1e,$be           ; screens $0400 and $2c00
 ; page offset of each buffer relative to SCREENA
 scrOffTab	dc.b 0,>(SCREENB-SCREENA)
 
-; per-char colors for the custom tiles (indexed from CHAR_FIRST)
-; grass flower rock water apple canopy trunkL trunkR gate
-charColors	dc.b 5,7,12,14,2,5,9,9,9
+; per-chapter char colors live in lvCharCol (high section)
 
 ; ponds: (row,col,len) per drawn row
 N_PONDROWS equ 8
@@ -2204,27 +2546,24 @@ appleColW	dc.b 0,0,0,0,0
 appleRowW	dc.b 0,0,0,0,0
 appleNumW	dc.b 0,0,0,0,0
 
-msgCaught	dc.b "THE WOLF GOT YOU!  PRESS FIRE",0
-msgWin	dc.b "YOU ESCAPED THE MEADOW! PRESS FIRE",0
+; per-chapter messages live in the high section
 
-; HUD text: exactly 15 chars = 5 sprites x 3 glyphs
-hudLine	dc.b "NEXT:1  GOT:0/5"
-hudGate	dc.b "GO EAST!    5/5"
+; HUD text: exactly 12 chars = 4 sprites x 3 glyphs
+hudLine	dc.b "N:1  GOT:0/5"
+hudGate	dc.b "GO EAST! 5/5"
 ; destination of each glyph column inside the HUD sprite block
 hudDstLo
 	dc.b <(HUDSPR+0),<(HUDSPR+1),<(HUDSPR+2)
 	dc.b <(HUDSPR+64),<(HUDSPR+65),<(HUDSPR+66)
 	dc.b <(HUDSPR+128),<(HUDSPR+129),<(HUDSPR+130)
 	dc.b <(HUDSPR+192),<(HUDSPR+193),<(HUDSPR+194)
-	dc.b <(HUDSPR+256),<(HUDSPR+257),<(HUDSPR+258)
 hudDstHi
 	dc.b >(HUDSPR+0),>(HUDSPR+1),>(HUDSPR+2)
 	dc.b >(HUDSPR+64),>(HUDSPR+65),>(HUDSPR+66)
 	dc.b >(HUDSPR+128),>(HUDSPR+129),>(HUDSPR+130)
 	dc.b >(HUDSPR+192),>(HUDSPR+193),>(HUDSPR+194)
-	dc.b >(HUDSPR+256),>(HUDSPR+257),>(HUDSPR+258)
 row3Tab	dc.b 0,3,6,9,12,15,18,21
-hudXTab	dc.b 124,148,172,196,220   ; centred over the view
+hudXTab	dc.b 136,160,184,208       ; centred over the view
 
 ; sfx tables: (frames,freqHi) pairs, 0 = end
 sfxWhistle	dc.b 5,$68,6,$8c,0
@@ -2237,26 +2576,1003 @@ sfxWin	dc.b 7,$40,7,$50,7,$60,14,$80,0
 peterBase	dc.b SPRBASE+0,SPRBASE+2,SPRBASE+4,SPRBASE+5
 peterStride	dc.b 1,1,2,2
 
-; wolf sprite pointer bases, indexed by wolfFace (0=left 1=right)
-; layout: $88 L1a,$89 L1b,$8a R1a,$8b R1b, +4 for gait frame 2
-wolfBaseA	dc.b SPRBASE+8,SPRBASE+10  ; screen-left half
-wolfBaseB	dc.b SPRBASE+9,SPRBASE+11  ; screen-right half
+; foe sprite pointer bases live in ZP (foeA/foeB), set per chapter
 
-; music: song table + per-song instrument, indexed by musSong
-songLo	dc.b <songPeterData,<songWolfData
-songHi	dc.b >songPeterData,>songWolfData
-musWaveTab	dc.b $41,$21               ; peter pulse, wolf sawtooth
-musAdTab	dc.b $18,$28               ; wolf gets a slower attack
-; switch to the wolf's theme inside the small box, back to
-; peter's only outside the big one
+; music: song table + per-song instrument, indexed by song id
+; 0 peter, 1 wolf, 2 bird, 3 duck, 4 grandpa, 5 hunters, 6 cat
+songLo	dc.b <songPeterData,<songWolfData,<songBirdData,<songDuckData
+	dc.b <songGrandpaData,<songHuntersData,<songCatData
+songHi	dc.b >songPeterData,>songWolfData,>songBirdData,>songDuckData
+	dc.b >songGrandpaData,>songHuntersData,>songCatData
+musWaveTab	dc.b $41,$21,$41,$21,$21,$41,$21
+musAdTab	dc.b $18,$28,$08,$18,$38,$28,$18
+; switch to the foe's theme inside the small box, back to the
+; chapter's own only outside the big one (indexed by musDanger)
 musDxThresh	dc.b 88,120
 musDyThresh	dc.b 80,112
+
+; ============================================================
+	org $2000              ; sprite data, pointer $80+
+	include "build/sprites.inc"
+
+	org $2540              ; more frames above the HUD block ($95+)
+	include "build/sprites2.inc"
+
+; ============================================================
+;  chapter logic - lives above the VIC buffers ($5500+).
+;  (the loader's zero-fill between here and the sprites lands on
+;  buffers that are rebuilt at init: screens, charset, map)
+; ============================================================
+	org $5500
+
+; ---- per-frame chapter work: prey pick, friend, FIRE, wins ----
+levelTick
+	; prey: chapter 2/3 foes stalk the waiting friend
+	lda peterXLo
+	sta preyXLo
+	lda peterXHi
+	sta preyXHi
+	lda peterY
+	sta preyY
+	lda frType
+	beq ltFriendDone
+	lda level
+	cmp #1
+	beq ltPreyF
+	cmp #2
+	bne ltFriendDone
+ltPreyF
+	lda frState
+	bne ltFriendDone
+	lda frXLo
+	sta preyXLo
+	lda frXHi
+	sta preyXHi
+	lda frY
+	sta preyY
+ltFriendDone
+	jsr moveFriend
+	jsr fireAction
+	lda level
+	bne ltNoPickup
+	jsr checkPickup        ; numbered apples: chapter 1 only
+ltNoPickup
+	jsr winCheck
+	jsr friendCaught
+	; timed HUD message: restore the chapter line when it expires
+	lda hudMsgT
+	beq ltDone
+	dec hudMsgT
+	bne ltDone
+	ldx level
+	lda lvHudLo,x
+	ldy lvHudHi,x
+	jsr renderHud
+ltDone
+	rts
+
+; ---- friend: waits, then follows peter two steps behind ----
+moveFriend
+	lda frType
+	bne mfGo
+	rts
+mfGo
+	lda frState
+	bne mfFollow
+	; waiting: has peter come close?
+	jsr frDeltaX
+	lda tmpHi
+	bne mfOut
+	lda tmpLo
+	cmp #40
+	bcs mfOut
+	jsr frDeltaY
+	cmp #32
+	bcs mfOut
+	inc frState            ; found!
+	lda #<sfxChirp
+	ldx #>sfxChirp
+	jsr sfxStart
+	; grandfather unlocks his gate (ch5)
+	lda level
+	cmp #4
+	bne mfOut
+	inc gateOpen
+	lda #7
+	sta COLTAB+GATE_CH
+	jsr paintGateVisible
+	lda #<hudGate5
+	ldy #>hudGate5
+	jmp hudMsg
+mfOut
+	rts
+mfFollow
+	; x: step 2 toward peter while farther than 14
+	lda peterXLo
+	sec
+	sbc frXLo
+	sta tmpLo
+	lda peterXHi
+	sbc frXHi
+	sta tmpHi
+	bpl mfXpos
+	lda #0
+	sec
+	sbc tmpLo
+	sta tmpLo
+	lda #0
+	sbc tmpHi
+	sta tmpHi
+	lda tmpHi
+	bne mfLgo
+	lda tmpLo
+	cmp #15
+	bcc mfY
+mfLgo
+	lda #0
+	sta frFace
+	lda frXLo
+	sec
+	sbc #2
+	sta frXLo
+	lda frXHi
+	sbc #0
+	sta frXHi
+	jmp mfY
+mfXpos
+	lda tmpHi
+	bne mfRgo
+	lda tmpLo
+	cmp #15
+	bcc mfY
+mfRgo
+	lda #1
+	sta frFace
+	lda frXLo
+	clc
+	adc #2
+	sta frXLo
+	lda frXHi
+	adc #0
+	sta frXHi
+mfY
+	lda peterY
+	cmp frY
+	bcs mfYdown
+	lda frY
+	sec
+	sbc peterY
+	cmp #11
+	bcc mfDone
+	dec frY
+	dec frY
+	rts
+mfYdown
+	lda peterY
+	sec
+	sbc frY
+	cmp #11
+	bcc mfDone
+	inc frY
+	inc frY
+mfDone
+	rts
+
+frDeltaX               ; |peterX - frX| -> tmpLo/tmpHi
+	lda peterXLo
+	sec
+	sbc frXLo
+	sta tmpLo
+	lda peterXHi
+	sbc frXHi
+	sta tmpHi
+	bpl fdxP
+	lda #0
+	sec
+	sbc tmpLo
+	sta tmpLo
+	lda #0
+	sbc tmpHi
+	sta tmpHi
+fdxP
+	rts
+
+frDeltaY               ; |peterY - frY| -> A
+	lda peterY
+	sec
+	sbc frY
+	bcs fdyP
+	eor #$ff
+	clc
+	adc #1
+fdyP
+	rts
+
+; ---- friend sprite (3): called inside updateSprites ----
+drawFriend
+	lda frType
+	bne dfGo
+	rts
+dfGo
+	lda frXLo
+	sec
+	sbc camXLo
+	sta newXLo
+	lda frXHi
+	sbc camXHi
+	sta newXHi
+	bmi dfHide
+	beq dfY
+	cmp #1
+	bne dfHide
+	lda newXLo
+	cmp #58
+	bcs dfHide
+dfY
+	lda frY
+	sec
+	sbc camY
+	bcc dfHide
+	cmp #168
+	bcs dfHide
+	clc
+	adc #54
+	sta $d007
+	lda newXLo
+	clc
+	adc #31
+	sta $d006
+	lda newXHi
+	adc #0
+	and #1
+	beq dfNoHi
+	lda tmp
+	ora #%00001000
+	sta tmp
+dfNoHi
+	lda d015m
+	ora #%00001000
+	sta d015m
+	; pointer: base + face + gait
+	lda frame
+	and #8
+	lsr
+	lsr                    ; 0 or 2
+	clc
+	adc frBase
+	clc
+	adc frFace
+	sta SCREENA+$3fb
+	sta SCREENB+$3fb
+dfHide
+	rts
+
+; ---- FIRE: whistle everywhere; in ch4 search rocks / set snare ----
+fireAction
+	lda level
+	cmp #3
+	beq faRope
+	jmp whistle
+faRope
+	lda fireEdge
+	bne faEdge
+	rts
+faEdge
+	jsr nearRock
+	bcc faOak
+	; search this rock
+	lda #1
+	sta rockDoneW,x
+	cpx ropeRock
+	beq faFound
+	lda #<hudNoRope
+	ldy #>hudNoRope
+	jsr hudMsg
+	lda #<sfxBuzz
+	ldx #>sfxBuzz
+	jmp sfxStart
+faFound
+	lda #1
+	sta carryRope
+	lda #<hudRope
+	ldy #>hudRope
+	jsr hudMsg
+	lda #<sfxWin
+	ldx #>sfxWin
+	jmp sfxStart
+faOak
+	lda carryRope
+	beq faWhistle
+	jsr nearOak
+	bcc faWhistle
+	lda #0
+	sta carryRope
+	lda #1
+	sta snareArm
+	lda #<hudSnare
+	ldy #>hudSnare
+	jsr hudMsg
+	lda #<sfxWin
+	ldx #>sfxWin
+	jmp sfxStart
+faWhistle
+	jmp whistle
+
+; ---- is peter beside an unsearched rock? C=1, X=index ----
+nearRock
+	lda peterXLo
+	clc
+	adc #12
+	sta tmpLo
+	lda peterXHi
+	adc #0
+	lsr
+	ror tmpLo
+	lsr
+	ror tmpLo
+	lsr
+	ror tmpLo              ; tmpLo = peter's column
+	lda peterY
+	clc
+	adc #18
+	lsr
+	lsr
+	lsr
+	sta tmpHi              ; peter's row
+	ldx rockN
+	beq nrNo
+	dex
+nrLoop
+	lda rockDoneW,x
+	bne nrNext
+	lda rockColW,x
+	sec
+	sbc tmpLo
+	jsr abs8
+	cmp #2
+	bcs nrNext
+	lda rockRowW,x
+	sec
+	sbc tmpHi
+	jsr abs8
+	cmp #2
+	bcs nrNext
+	sec
+	rts
+nrNext
+	dex
+	bpl nrLoop
+nrNo
+	clc
+	rts
+
+abs8
+	bpl abs8Done
+	eor #$ff
+	clc
+	adc #1
+abs8Done
+	rts
+
+; ---- is peter at the big oak? C=1 ----
+nearOak
+	lda peterXLo
+	clc
+	adc #12
+	sta tmpLo
+	lda peterXHi
+	adc #0
+	sta tmpHi
+	lda tmpLo
+	sec
+	sbc #<496
+	sta tmpLo
+	lda tmpHi
+	sbc #>496
+	sta tmpHi
+	bpl noAbs
+	lda #0
+	sec
+	sbc tmpLo
+	sta tmpLo
+	lda #0
+	sbc tmpHi
+	sta tmpHi
+noAbs
+	lda tmpHi
+	bne noFar
+	lda tmpLo
+	cmp #40
+	bcs noFar
+	lda peterY
+	clc
+	adc #18
+	sec
+	sbc #112
+	jsr abs8
+	cmp #44
+	bcs noFar
+	sec
+	rts
+noFar
+	clc
+	rts
+
+; ---- is the foe under the oak? C=1 ----
+wolfAtOak
+	lda wolfXLo
+	clc
+	adc #24
+	sta tmpLo
+	lda wolfXHi
+	adc #0
+	sta tmpHi
+	lda tmpLo
+	sec
+	sbc #<496
+	sta tmpLo
+	lda tmpHi
+	sbc #>496
+	sta tmpHi
+	bpl waAbs
+	lda #0
+	sec
+	sbc tmpLo
+	sta tmpLo
+	lda #0
+	sbc tmpHi
+	sta tmpHi
+waAbs
+	lda tmpHi
+	bne waNo
+	lda tmpLo
+	cmp #44
+	bcs waNo
+	lda wolfY
+	clc
+	adc #18
+	sec
+	sbc #112
+	jsr abs8
+	cmp #48
+	bcs waNo
+	sec
+	rts
+waNo
+	clc
+	rts
+
+; ---- per-chapter win conditions ----
+winCheck
+	lda level
+	beq wcDone             ; ch1: walking the gate sets winFlag
+	cmp #1
+	beq wcBird
+	cmp #2
+	beq wcDuck
+	cmp #3
+	beq wcSnare
+	cmp #4
+	beq wcDone             ; ch5: the gate again
+wcSnare
+	lda snareArm
+	beq wcDone
+	jsr wolfAtOak
+	bcc wcDone
+	inc winFlag
+	rts
+wcBird
+	lda frState
+	beq wcDone
+	jsr nearOak
+	bcc wcDone
+	inc winFlag
+	rts
+wcDuck
+	lda frState
+	beq wcDone
+	lda peterXLo
+	clc
+	adc #12
+	sta tmpLo
+	lda peterXHi
+	adc #0
+	cmp #2                 ; pond zone: x 544..648
+	bne wcDone
+	lda tmpLo
+	cmp #32
+	bcc wcDone
+	cmp #137
+	bcs wcDone
+	lda peterY
+	clc
+	adc #18
+	cmp #28                ; y 28..84
+	bcc wcDone
+	cmp #85
+	bcs wcDone
+	inc winFlag
+wcDone
+	rts
+
+; ---- the foe takes the waiting friend: lose ----
+friendCaught
+	lda frType
+	beq fcDone
+	lda frState
+	bne fcDone
+	lda level
+	cmp #1
+	beq fcGo
+	cmp #2
+	bne fcDone
+fcGo
+	lda wolfXLo
+	clc
+	adc #24
+	sta tmpLo
+	lda wolfXHi
+	adc #0
+	sta tmpHi
+	lda frXLo
+	clc
+	adc #6
+	sta newXLo
+	lda frXHi
+	adc #0
+	sta newXHi
+	lda tmpLo
+	sec
+	sbc newXLo
+	sta tmpLo
+	lda tmpHi
+	sbc newXHi
+	sta tmpHi
+	bpl fcAbs
+	lda #0
+	sec
+	sbc tmpLo
+	sta tmpLo
+	lda #0
+	sbc tmpHi
+	sta tmpHi
+fcAbs
+	lda tmpHi
+	bne fcDone
+	lda tmpLo
+	cmp #22
+	bcs fcDone
+	lda wolfY
+	sec
+	sbc frY
+	jsr abs8
+	cmp #18
+	bcs fcDone
+	; the friend is taken!
+	lda #1
+	sta state
+	lda #40
+	sta msgTimer
+	ldx level
+	lda msgFriendLo,x
+	ldy msgFriendHi,x
+	jsr drawMsg
+	lda #<sfxCaught
+	ldx #>sfxCaught
+	jmp sfxStart
+fcDone
+	rts
+
+; A/Y = 12-char line: show it on the HUD for ~3 seconds
+hudMsg
+	jsr renderHud
+	lda #150
+	sta hudMsgT
+	rts
+
+
+; ============================================================
+;  autopilot: the game plays itself (test builds / demo)
+; ============================================================
+autoPilot
+	lda state
+	beq apPlay
+	lda frame              ; message screens: tap FIRE
+	and #15
+	bne apIdle
+	lda #%00010000
+	sta joy
+	rts
+apIdle
+	lda #0
+	sta joy
+	rts
+apPlay
+	jsr apGoal
+	lda #0
+	sta joy
+	; steer x
+	lda peterXLo
+	sec
+	sbc autGXLo
+	sta tmpLo
+	lda peterXHi
+	sbc autGXHi
+	sta tmpHi
+	bpl apXpos
+	lda #0
+	sec
+	sbc tmpLo
+	sta tmpLo
+	lda #0
+	sbc tmpHi
+	sta tmpHi
+	lda tmpHi
+	bne apRight
+	lda tmpLo
+	cmp #4
+	bcc apY
+apRight
+	lda joy
+	ora #%00001000
+	sta joy
+	jmp apY
+apXpos
+	lda tmpHi
+	bne apLeft
+	lda tmpLo
+	cmp #4
+	bcc apY
+apLeft
+	lda joy
+	ora #%00000100
+	sta joy
+apY
+	; steer y
+	lda peterY
+	cmp autGY
+	beq apStuck
+	bcs apUp
+	lda autGY
+	sec
+	sbc peterY
+	cmp #4
+	bcc apStuck
+	lda joy
+	ora #%00000010
+	sta joy
+	jmp apStuck
+apUp
+	lda peterY
+	sec
+	sbc autGY
+	cmp #4
+	bcc apStuck
+	lda joy
+	ora #%00000001
+	sta joy
+apStuck
+	; committed detour in progress? slide along the obstacle
+	lda autWander
+	beq apChkStuck
+	dec autWander
+	lda joy
+	ora autDir
+	sta joy
+	jmp apFireBtn
+apChkStuck
+	; wedged against something? detour perpendicular for a while
+	lda joy
+	and #%00001111
+	beq apFireBtn
+	lda peterXLo
+	cmp autSnapX
+	bne apMoved
+	lda peterY
+	cmp autSnapY
+	bne apMoved
+	inc autStuck
+	lda autStuck
+	cmp #40
+	bcc apFireBtn
+	lda #0
+	sta autStuck
+	lda #55
+	sta autWander
+	lda autFlip
+	eor #1
+	sta autFlip
+	; steering mostly horizontal? detour vertically (and vice versa)
+	lda joy
+	and #%00001100
+	beq apDetH
+	lda autFlip
+	beq apDetDown
+	lda #%00000001         ; up
+	sta autDir
+	jmp apFireBtn
+apDetDown
+	lda #%00000010         ; down
+	sta autDir
+	jmp apFireBtn
+apDetH
+	lda autFlip
+	beq apDetRight
+	lda #%00000100         ; left
+	sta autDir
+	jmp apFireBtn
+apDetRight
+	lda #%00001000         ; right
+	sta autDir
+	jmp apFireBtn
+apMoved
+	lda peterXLo
+	sta autSnapX
+	lda peterY
+	sta autSnapY
+	lda #0
+	sta autStuck
+apFireBtn
+	; FIRE: ch4 searches and arms; otherwise whistle when hunted
+	lda level
+	cmp #3
+	bne apWhistle
+	jsr nearRock
+	bcs apPress
+	lda carryRope
+	beq apWhistle
+	jsr nearOak
+	bcs apPress
+apWhistle
+	lda level
+	cmp #5
+	beq apDone             ; the chase: lead him in, don't stun him
+	cmp #3
+	bne apWh2
+	lda snareArm
+	bne apDone             ; snare set: let him blunder into it
+apWh2
+	lda cooldown
+	bne apDone
+	jsr absDx
+	lda tmpHi
+	bne apDone
+	lda tmpLo
+	cmp #64
+	bcs apDone
+	jsr absDy
+	cmp #48
+	bcs apDone
+apPress
+	lda frame
+	and #7
+	bne apDone
+	lda joy
+	ora #%00010000
+	sta joy
+apDone
+	rts
+
+apWander	dc.b %00000001,%00001000,%00000010,%00000100
+
+; where should the autopilot walk? -> autGX/autGY
+apGoal
+	lda level
+	beq agApples
+	cmp #1
+	bne agN2
+	jmp agFriendOak
+agN2
+	cmp #2
+	bne agN3
+	jmp agFriendPond
+agN3
+	cmp #3
+	bne agN4
+	jmp agRope
+agN4
+	cmp #4
+	bne agN5
+	jmp agFriendGate
+agN5
+	jmp agOak              ; ch6: wait by the oak
+agApples
+	lda gateOpen
+	bne agGate
+	ldx #N_APPLES-1
+agAscan
+	lda appleNumW,x
+	cmp nextNum
+	beq agAfound
+	dex
+	bpl agAscan
+agGate
+	lda #<1000
+	sta autGXLo
+	lda #>1000
+	sta autGXHi
+	lda #110
+	sta autGY
+	rts
+agAfound
+	lda #0
+	sta autGXHi
+	lda appleColW,x
+	asl
+	rol autGXHi
+	asl
+	rol autGXHi
+	asl
+	rol autGXHi
+	sec
+	sbc #8
+	sta autGXLo
+	bcs agAy
+	dec autGXHi
+agAy
+	lda appleRowW,x
+	asl
+	asl
+	asl
+	sec
+	sbc #14
+	jsr agClampY
+	sta autGY
+	rts
+agFriendOak
+	lda frState
+	bne agOak
+agFriendGoto
+	lda frXLo
+	sec
+	sbc #12
+	sta autGXLo
+	lda frXHi
+	sbc #0
+	sta autGXHi
+	lda frY
+	sta autGY
+	rts
+agOak
+	; stand a little WEST of the trunk: the wolf coming from the
+	; east then springs the snare well before he reaches peter
+	lda #<464
+	sta autGXLo
+	lda #>464
+	sta autGXHi
+	lda #106
+	sta autGY
+	rts
+agFriendPond
+	lda frState
+	beq agFriendGoto
+	lda #<584
+	sta autGXLo
+	lda #>584
+	sta autGXHi
+	lda #58
+	sta autGY
+	rts
+agRope
+	lda snareArm
+	bne agOak
+	lda carryRope
+	bne agOak
+	ldx rockN
+	beq agOak
+	dex
+agRscan
+	lda rockDoneW,x
+	beq agRfound
+	dex
+	bpl agRscan
+	jmp agOak
+agRfound
+	lda #0
+	sta autGXHi
+	lda rockColW,x
+	asl
+	rol autGXHi
+	asl
+	rol autGXHi
+	asl
+	rol autGXHi
+	sec
+	sbc #8
+	sta autGXLo
+	bcs agRy
+	dec autGXHi
+agRy
+	lda rockRowW,x
+	asl
+	asl
+	asl
+	sec
+	sbc #14
+	jsr agClampY
+	sta autGY
+	rts
+agFriendGate
+	lda frState
+	beq agFriendGoto
+	jmp agGate
+
+agClampY
+	cmp #236
+	bcc agCyOk
+	lda #2                 ; wrapped negative: aim just below the top
+agCyOk
+	rts
+
+; ============================================================
+;  chapter tables
+; ============================================================
+lvBg	dc.b 13,13,14,0,0,13
+; char colors per chapter (9 each):
+; tuft flower rock water apple canopy trunkL trunkR gate
+lvCharCol
+	dc.b 5,7,12,14,2,5,9,9,9      ; 1 day meadow
+	dc.b 8,7,12,14,2,5,9,9,9      ; 2 golden afternoon
+	dc.b 6,3,12,6,2,6,9,9,9       ; 3 blue dusk
+	dc.b 11,12,12,6,2,11,9,9,9    ; 4 night
+	dc.b 11,12,12,6,2,11,9,9,9    ; 5 deep night
+	dc.b 5,7,12,14,2,5,9,9,9      ; 6 day again
+lvFriend	dc.b 0,1,2,0,3,0           ; none/bird/duck/none/grandpa/none
+lvFriendCol	dc.b 0,14,1,0,15,0
+lvFoeCat	dc.b 0,1,0,0,0,0
+lvFoeCol	dc.b 11,8,11,11,11,11
+lvSong	dc.b 0,2,3,1,4,5           ; peter bird duck wolf grandpa hunters
+lvDanger	dc.b 1,6,1,1,1,1           ; wolf theme, cat theme in ch2
+lvPeterXLo	dc.b 48,48,48,48,48,<900
+lvPeterXHi	dc.b 0,0,0,0,0,>900
+lvPeterY	dc.b 140,140,140,140,140,140
+lvFoeXLo	dc.b <700,<700,<700,<700,<700,<960
+lvFoeXHi	dc.b >700,>700,>700,>700,>700,>960
+lvFoeY	dc.b 60,60,60,60,60,60
+lvFrXLo	dc.b 0,<260,<250,0,<500,0
+lvFrXHi	dc.b 0,>260,>250,0,>500,0
+lvFrY	dc.b 0,200,80,0,170,0
+frBaseTab	dc.b $9d,$a1,$a5           ; bird, duck, grandpa (left base)
+
+; HUD lines (12 chars each)
+hud2	dc.b "2 SAVE BIRD "
+hud3	dc.b "3 TO POND   "
+hud4	dc.b "4 FIND ROPE "
+hud5	dc.b "5 GATE HOME "
+hud6	dc.b "6 RUN WEST  "
+hudRope	dc.b "ROPE! TO OAK"
+hudNoRope	dc.b "NOTHING HERE"
+hudSnare	dc.b "SNARE IS SET"
+hudGate5	dc.b "TO THE GATE "
+lvHudLo	dc.b <hudLine,<hud2,<hud3,<hud4,<hud5,<hud6
+lvHudHi	dc.b >hudLine,>hud2,>hud3,>hud4,>hud5,>hud6
+
+; recorded rocks (ch4's hiding places)
+rockColW	ds.b 8
+rockRowW	ds.b 8
+rockDoneW	ds.b 8
+
+; message screens
+msgCaughtW	dc.b "THE WOLF GOT YOU!  PRESS FIRE",0
+msgCaughtC	dc.b "THE CAT GOT YOU!  PRESS FIRE",0
+msgFriendB	dc.b "THE CAT TOOK THE BIRD! PRESS FIRE",0
+msgFriendD	dc.b "THE WOLF TOOK THE DUCK! PRESS FIRE",0
+msgWin1	dc.b "YOU ESCAPED THE MEADOW! PRESS FIRE",0
+msgWin2	dc.b "THE BIRD IS SAFE! PRESS FIRE",0
+msgWin3	dc.b "THE DUCK IS HOME! PRESS FIRE",0
+msgWin4	dc.b "THE WOLF IS CAUGHT! PRESS FIRE",0
+msgWin5	dc.b "SAFE AT THE GATE! PRESS FIRE",0
+msgWin6	dc.b "THE WOLF IS CAUGHT! THE END",0
+msgWinLo	dc.b <msgWin1,<msgWin2,<msgWin3,<msgWin4,<msgWin5,<msgWin6
+msgWinHi	dc.b >msgWin1,>msgWin2,>msgWin3,>msgWin4,>msgWin5,>msgWin6
+msgCaughtLo	dc.b <msgCaughtW,<msgCaughtC,<msgCaughtW,<msgCaughtW,<msgCaughtW,<msgCaughtW
+msgCaughtHi	dc.b >msgCaughtW,>msgCaughtC,>msgCaughtW,>msgCaughtW,>msgCaughtW,>msgCaughtW
+msgFriendLo	dc.b 0,<msgFriendB,<msgFriendD,0,0,0
+msgFriendHi	dc.b 0,>msgFriendB,>msgFriendD,0,0,0
+
+sfxChirp	dc.b 4,$50,4,$70,0
 
 	include "build/music.inc"
 
 ; custom character bitmaps (copied over the ROM set at init)
 	include "build/chars.inc"
-
-; ============================================================
-	org $2000              ; sprite data, pointer $80+
-	include "build/sprites.inc"
