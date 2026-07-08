@@ -62,7 +62,7 @@ BANKS = {
     7:  "000 210 C22 FB8 A22 FFF 249 000 000 000 000 000 000 000 000 000",  # Peter: outline,coat,skin,capDk,white,shorts
     8:  "000 334 778 556 CDD 222 EB4 F54 FFE 000 000 000 000 000 000 000",  # wolf: dark,coat,coatDk,tailTip,paw,eyeGold,eyeRed,fang
     9:  "000 445 99A 677 BBC 333 9AF 9AF DDD 000 000 000 000 000 000 000",  # wolf stunned (web stun grays, moony eye)
-    10: "000 111 FFF E92 A61 46C 235 FC3 F80 641 C22 888 274 F9A 331 FE6",  # cast
+    10: "000 111 FFF D95 B63 46C 3BC FC3 F80 852 C22 888 BE5 F9A FED FE6",  # cast (3/4 ginger, 6 teal dragonfly, 9 tabby dark, C cat eye, E cream)
     11: "000 210 EB9 EEE 742 253 667 434 555 C33 FC3 875 132 000 000 000",  # humans
     12: "000 210 D22 F66 274 FC3 C96 E33 811 FFF 445 653 964 F80 888 000",  # props
     13: TERRAIN_AUTUMN,

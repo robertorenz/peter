@@ -281,10 +281,12 @@ through the *Storybook*, *Wild* (autumn) and *Prokofiev* (winter) tiers.
 - **The worlds** are up to 2048 px wide and live entirely in VRAM as hardware
   tile maps — the camera is two scroll registers, so scrolling costs nothing and
   runs pixel-smooth at 60 fps. The whole cast walks at once: Peter (four facings),
-  the wolf — **ported from the web game's vector art**, bushy white-tipped tail,
-  golden eye, with crouch-telegraph and pounce frames — the ginger cat with a
-  stalking creep, bird, duck, Grandfather, the hunter patrol, plus numbered
-  apples, butterflies, fireflies, falling leaves or snow — VERA's 128 hardware
+  the wolf and the ginger tabby cat — both **ported from the web game's vector
+  art** (the wolf's bushy white-tipped tail and golden eye, the cat's raised
+  S-curve tail, tabby stripes and green slit eye), each with crouch-telegraph
+  frames — bird, duck, Grandfather, the hunter patrol, plus numbered apples,
+  butterflies, fireflies, teal **dragonflies that hover then dart** like pond
+  skimmers, slanting rain streaks, falling leaves or snow — VERA's 128 hardware
   sprites soak it all up, and right-facing frames are just the h-flip bit.
   Searchable **16x16 boulders** dot the meadows, and every feature the game can
   interact with (rocks, bushes, trees, apples, the pond) carries full 16-bit

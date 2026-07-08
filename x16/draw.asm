@@ -17,8 +17,10 @@ SPI_HEARTS  = 28                 ; ..30
 SPI_MINI    = 32                 ; ..39 minimap dots
 SPI_FIRE    = 40                 ; ..51 fireflies
 SPI_BFLY    = 52                 ; ..59 butterflies
+SPI_DFLY    = 60                 ; ..63 dragonflies
 SPI_WEATHER = 64                 ; ..79
 SPI_PARADE  = 80                 ; ..95
+NDFLY = 4
 
 Z_NORM = %00001000               ; z=2: between layer0 and layer1
 
@@ -37,6 +39,12 @@ firePh:    .res 12
 bflyX:     .res 8
 bflyY:     .res 8
 bflyPh:    .res 8
+dfX:       .res NDFLY            ; dragonflies: hover-then-dart
+dfY:       .res NDFLY
+dfTX:      .res NDFLY            ; dart target
+dfTY:      .res NDFLY
+dfHov:     .res NDFLY            ; hover frames left (0 = darting)
+dfPh:      .res NDFLY
 wthX:      .res 16
 wthY:      .res 16
 rainT:     .res 2                ; drizzle timer (0 = none)
@@ -437,7 +445,7 @@ nightCircle:
 ; ------------------------------------------------------------
 .rodata
 typeAnchX: .byte 0, 16, 32, 16, 8, 8, 10, 10, 8
-typeAnchY: .byte 0, 25, 30, 14, 14, 15, 26, 26, 14
+typeAnchY: .byte 0, 25, 30, 30, 14, 15, 26, 26, 14
 .code
 
 ; worldToScreen: slot X -> spXL/H, spYL/H (anchored). C=1 offscreen.
@@ -1067,8 +1075,9 @@ drawApples:
 ; ------------------------------------------------------------
 ambientTick:
 	lda ambInit
-	bne @tick
-	inc ambInit
+	beq :+
+	jmp @tick
+:	inc ambInit
 	; scatter ambient particles
 	ldx #11
 @fi:
@@ -1109,6 +1118,27 @@ ambientTick:
 :	sta wthY,x
 	dex
 	bpl @wi
+	ldx #NDFLY-1
+@di:
+	jsr rnd
+	sta dfX,x
+	sta dfTX,x
+	jsr rnd
+	and #127
+	clc
+	adc #60
+	sta dfY,x
+	sta dfTY,x
+	jsr rnd
+	and #15
+	sta dfPh,x
+	jsr rnd
+	and #63
+	clc
+	adc #40
+	sta dfHov,x
+	dex
+	bpl @di
 	stz rainT
 	stz rainT+1
 @tick:
@@ -1206,7 +1236,7 @@ ambientTick:
 	jsr sprHide
 	dex
 	bpl @bh
-	bra @weather
+	bra @dfHideAll
 @bshow:
 	ldx #7
 @bf:
@@ -1258,6 +1288,210 @@ ambientTick:
 	inc bflyX,x
 :	dex
 	bpl @bf
+	bra @dflies
+
+	; ---- dragonflies: hover with a wobble, then dart somewhere new ----
+@dfHideAll:
+	ldx #NDFLY-1
+@dfh:
+	txa
+	clc
+	adc #SPI_DFLY
+	sta spIdx
+	jsr sprHide
+	dex
+	bpl @dfh
+	jmp @weather
+@dflies:
+	ldx level
+	lda lvMood,x
+	cmp #MOOD_DUSK
+	bcs @dfHideAll               ; day/golden only, like the pond skimmers they are
+	ldx #NDFLY-1
+@df:
+	txa
+	clc
+	adc #SPI_DFLY
+	sta spIdx
+	lda dfHov,x
+	bne :+
+	jmp @dfDart
+:	; hovering
+	dec dfHov,x
+	bne @dfHoverPos
+	; hover over: pick a dart target nearby
+	jsr rnd
+	and #127
+	sec
+	sbc #64
+	clc
+	adc dfX,x
+	cmp #16
+	bcs :+
+	lda #16
+:	cmp #233
+	bcc :+
+	lda #232
+:	sta dfTX,x
+	jsr rnd
+	and #63
+	sec
+	sbc #32
+	clc
+	adc dfY,x
+	cmp #56
+	bcs :+
+	lda #56
+:	cmp #217
+	bcc :+
+	lda #216
+:	sta dfTY,x
+@dfHoverPos:
+	; drawn at df +- small sine wobble
+	lda frame
+	lsr
+	lsr
+	clc
+	adc dfPh,x
+	and #15
+	tay
+	lda sinTab,y
+	cmp #$80
+	bcs @dfnx
+	lsr
+	lsr
+	lsr
+	clc
+	adc dfX,x
+	bra @dfhx
+@dfnx:
+	eor #$FF
+	inc a
+	lsr
+	lsr
+	lsr
+	sta tmp
+	lda dfX,x
+	sec
+	sbc tmp
+@dfhx:
+	sta spXL
+	stz spXH
+	lda frame
+	lsr
+	lsr
+	clc
+	adc dfPh,x
+	adc #4
+	and #15
+	tay
+	lda sinTab,y
+	cmp #$80
+	bcs @dfny
+	lsr
+	lsr
+	lsr
+	clc
+	adc dfY,x
+	bra @dfhy
+@dfny:
+	eor #$FF
+	inc a
+	lsr
+	lsr
+	lsr
+	sta tmp
+	lda dfY,x
+	sec
+	sbc tmp
+@dfhy:
+	sta spYL
+	stz spYH
+	bra @dfPut
+@dfDart:
+	; dash: 3px/f in x, 2px/f in y, straight at the target
+	lda dfTX,x
+	cmp dfX,x
+	beq @dfy
+	bcs @dfxp
+	lda dfX,x
+	sec
+	sbc #3
+	sta dfX,x
+	bra @dfy
+@dfxp:
+	lda dfX,x
+	clc
+	adc #3
+	sta dfX,x
+@dfy:
+	lda dfTY,x
+	cmp dfY,x
+	beq @dfArr
+	bcs @dfyp
+	lda dfY,x
+	sec
+	sbc #2
+	sta dfY,x
+	bra @dfArr
+@dfyp:
+	lda dfY,x
+	clc
+	adc #2
+	sta dfY,x
+@dfArr:
+	; close enough? rest a while
+	lda dfTX,x
+	sec
+	sbc dfX,x
+	bpl :+
+	eor #$FF
+	inc a
+:	cmp #4
+	bcs @dfDartPos
+	lda dfTY,x
+	sec
+	sbc dfY,x
+	bpl :+
+	eor #$FF
+	inc a
+:	cmp #4
+	bcs @dfDartPos
+	jsr rnd
+	and #127
+	clc
+	adc #70
+	sta dfHov,x
+@dfDartPos:
+	lda dfX,x
+	sta spXL
+	stz spXH
+	lda dfY,x
+	sta spYL
+	stz spYH
+@dfPut:
+	; wings shimmer fast; face where it's headed
+	lda frame
+	and #2
+	beq :+
+	lda #FR_DRAGONFLY_1
+	bra :++
+:	lda #FR_DRAGONFLY_2
+:	sta spFrame
+	lda #Z_NORM
+	sta tmp
+	lda dfTX,x
+	cmp dfX,x
+	bcc :+
+	beq :+
+	lda #(Z_NORM|1)              ; heading right: hflip
+	sta tmp
+:	lda tmp
+	sta spFlags
+	jsr sprPut
+	dex
+	bmi @weather
+	jmp @df
 @weather:
 	jmp weatherTick
 
@@ -1312,12 +1546,14 @@ weatherTick:
 	jsr rnd
 	sta wthX,x
 :	lda wthX,x
+	dec a                        ; slight wind slant
+	sta wthX,x
 	sta spXL
 	stz spXH
 	lda wthY,x
 	sta spYL
 	stz spYH
-	lda #FR_SPARKLE
+	lda #FR_RAIN
 	sta spFrame
 	lda #%00001100
 	sta spFlags
