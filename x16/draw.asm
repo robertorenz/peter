@@ -437,7 +437,7 @@ nightCircle:
 ; ------------------------------------------------------------
 .rodata
 typeAnchX: .byte 0, 16, 32, 16, 8, 8, 10, 10, 8
-typeAnchY: .byte 0, 25, 26, 14, 14, 15, 26, 26, 14
+typeAnchY: .byte 0, 25, 30, 14, 14, 15, 26, 26, 14
 .code
 
 ; worldToScreen: slot X -> spXL/H, spYL/H (anchored). C=1 offscreen.
@@ -880,7 +880,7 @@ drawApples:
 	lda appleYL,x
 	sbc camY
 	sta spYL
-	lda #0
+	lda appleYH,x
 	sbc camY+1
 	sta spYH
 	sec
@@ -986,7 +986,7 @@ drawApples:
 	lda ropeDropYL
 	sbc camY
 	sta spYL
-	lda #0
+	lda ropeDropYH
 	sbc camY+1
 	sta spYH
 	lda #FR_ROPECOIL

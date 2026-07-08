@@ -86,6 +86,7 @@ ropeRock:  .res 1                ; which rock hides the rope
 ropeDropXL:.res 1                ; dropped rope position
 ropeDropXH:.res 1
 ropeDropYL:.res 1
+ropeDropYH:.res 1
 ropeDropped:.res 1
 snareArmed:.res 1
 tiptoe:    .res 1
@@ -140,22 +141,27 @@ mul16x8:
 	stz mulR
 	stz mulR+1
 	stz mulR+2
+	stz mulA2
 	ldy #8
 @bit:
 	lsr
 	bcc @skip
 	pha
 	clc
-	lda mulR+1
+	lda mulR
 	adc mulA
+	sta mulR
+	lda mulR+1
+	adc mulA+1
 	sta mulR+1
 	lda mulR+2
-	adc mulA+1
+	adc mulA2
 	sta mulR+2
 	pla
 @skip:
 	asl mulA
 	rol mulA+1
+	rol mulA2
 	dey
 	bne @bit
 	rts
@@ -944,12 +950,19 @@ spawnLevelApples:
 	adc #0
 	sta appleXH,x
 	lda cellY
+	stz tmpHi
 	asl
+	rol tmpHi
 	asl
+	rol tmpHi
 	asl
+	rol tmpHi
 	clc
 	adc #4
 	sta appleYL,x
+	lda tmpHi
+	adc #0
+	sta appleYH,x
 	; number
 	ldy level
 	lda lvType,y
@@ -1432,7 +1445,8 @@ searchRockCheck:
 	sta tgXH
 	lda rockYL,x
 	sta tgYL
-	stz tgYH
+	lda rockYH,x
+	sta tgYH
 	phx
 	ldx #SL_PETER
 	jsr distToPoint
@@ -1440,7 +1454,7 @@ searchRockCheck:
 	lda distH
 	bne @next
 	lda distL
-	cmp #28
+	cmp #34                      ; big boulder: reach from any side
 	bcs @next
 	; search it
 	lda #1
@@ -1732,7 +1746,8 @@ shakeTreeCheck:
 	sta tgXH
 	lda treeYL,x
 	sta tgYL
-	stz tgYH
+	lda treeYH,x
+	sta tgYH
 	phx
 	ldx #SL_PETER
 	jsr distToPoint
@@ -1758,6 +1773,9 @@ shakeTreeCheck:
 	clc
 	adc #10
 	sta appleYL,y
+	lda treeYH,x
+	adc #0
+	sta appleYH,y
 	lda #$FF
 	sta appleNum,y
 	inc appleCnt
@@ -1812,6 +1830,8 @@ dropRope:
 	sta ropeDropXH
 	lda ayL+SL_PETER
 	sta ropeDropYL
+	lda ayH+SL_PETER
+	sta ropeDropYH
 	rts
 
 ropePickCheck:
@@ -1821,7 +1841,8 @@ ropePickCheck:
 	sta tgXH
 	lda ropeDropYL
 	sta tgYL
-	stz tgYH
+	lda ropeDropYH
+	sta tgYH
 	ldx #SL_PETER
 	jsr distToPoint
 	lda distH
@@ -1851,7 +1872,8 @@ pickupCheck:
 	sta tgXH
 	lda appleYL,x
 	sta tgYL
-	stz tgYH
+	lda appleYH,x
+	sta tgYH
 	phx
 	ldx #SL_PETER
 	jsr distToPoint
@@ -2376,7 +2398,8 @@ peterHidden:
 	sta tgXH
 	lda bushYL,x
 	sta tgYL
-	stz tgYH
+	lda bushYH,x
+	sta tgYH
 	phx
 	ldx #SL_PETER
 	jsr distToPoint

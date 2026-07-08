@@ -79,6 +79,7 @@ tgYH:       .res 1
 spdF:       .res 1               ; speed 8.8
 spdI:       .res 1
 mulA:       .res 2               ; 16-bit multiplicand
+mulA2:      .res 1               ; multiplicand bits 16-23 during the shift
 mulR:       .res 3               ; 24-bit result
 textCol:    .res 1
 ; actor loop index

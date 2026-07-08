@@ -554,7 +554,8 @@ miniGoal:
 	sta tgXH
 	lda pondYL
 	sta tgYL
-	stz tgYH
+	lda pondYH
+	sta tgYH
 	bra @dot
 @none:
 	jmp sprHide

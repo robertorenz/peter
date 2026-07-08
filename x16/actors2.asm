@@ -190,7 +190,8 @@ friendGoal:
 	sta tgXH
 	lda pondYL
 	sta tgYL
-	stz tgYH
+	lda pondYH
+	sta tgYH
 	ldx #SL_FRIEND
 	jsr distToPoint
 	lda distH
@@ -705,6 +706,8 @@ landApple:
 	sta appleXH,y
 	lda thYL,x
 	sta appleYL,y
+	lda thYH,x
+	sta appleYH,y
 	lda thNum,x
 	sta appleNum,y
 @done:

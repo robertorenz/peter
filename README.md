@@ -281,10 +281,15 @@ through the *Storybook*, *Wild* (autumn) and *Prokofiev* (winter) tiers.
 - **The worlds** are up to 2048 px wide and live entirely in VRAM as hardware
   tile maps — the camera is two scroll registers, so scrolling costs nothing and
   runs pixel-smooth at 60 fps. The whole cast walks at once: Peter (four facings),
-  the two-tile-wide wolf with **crouch-telegraph and pounce frames**, the ginger
-  cat with a stalking creep, bird, duck, Grandfather, the hunter patrol, plus
-  numbered apples, butterflies, fireflies, falling leaves or snow — VERA's 128
-  hardware sprites soak it all up, and right-facing frames are just the h-flip bit.
+  the wolf — **ported from the web game's vector art**, bushy white-tipped tail,
+  golden eye, with crouch-telegraph and pounce frames — the ginger cat with a
+  stalking creep, bird, duck, Grandfather, the hunter patrol, plus numbered
+  apples, butterflies, fireflies, falling leaves or snow — VERA's 128 hardware
+  sprites soak it all up, and right-facing frames are just the h-flip bit.
+  Searchable **16x16 boulders** dot the meadows, and every feature the game can
+  interact with (rocks, bushes, trees, apples, the pond) carries full 16-bit
+  world coordinates, so the bottom half of each 512-px-tall map plays exactly
+  like the top.
 - **Light is a palette.** Day, golden afternoon, blue dusk and night are 16-color
   palette banks; the Great Chase **crossfades** between them as you run east, and
   on Grandfather's Gate the darkness is real: every visible tile picks one of three

@@ -570,7 +570,8 @@ autoTarget:
 	sta tgXH
 	lda appleYL,x
 	sta tgYL
-	stz tgYH
+	lda appleYH,x
+	sta tgYH
 	rts
 @notApples:
 	; rescue/escort: fetch the friend before heading for the goal
@@ -621,7 +622,8 @@ autoTarget:
 	sta tgXH
 	lda rockYL,x
 	sta tgYL
-	stz tgYH
+	lda rockYH,x
+	sta tgYH
 	rts
 @dropped:
 	lda ropeDropXL
@@ -630,7 +632,8 @@ autoTarget:
 	sta tgXH
 	lda ropeDropYL
 	sta tgYL
-	stz tgYH
+	lda ropeDropYH
+	sta tgYH
 	rts
 @goal:
 	; oak/pond/gate by level type
@@ -671,7 +674,8 @@ autoTarget:
 	sta tgXH
 	lda pondYL
 	sta tgYL
-	stz tgYH
+	lda pondYH
+	sta tgYH
 	rts
 
 ; button masks (joyB, active low)

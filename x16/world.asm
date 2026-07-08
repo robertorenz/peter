@@ -39,20 +39,24 @@ terrBank:   .res 1               ; palette offset applied to terrain entries
 appleXL:    .res 10              ; world px
 appleXH:    .res 10
 appleYL:    .res 10
+appleYH:    .res 10
 appleNum:   .res 10              ; 0 = gone, else 1..9 (or $FF ammo)
 appleCnt:   .res 1
 bushXL:     .res 6
 bushXH:     .res 6
 bushYL:     .res 6
+bushYH:     .res 6
 bushCnt:    .res 1
 rockXL:     .res 8
 rockXH:     .res 8
 rockYL:     .res 8
+rockYH:     .res 8
 rockDone:   .res 8               ; 1 = searched
 rockCnt:    .res 1
 treeXL:     .res 16
 treeXH:     .res 16
 treeYL:     .res 16
+treeYH:     .res 16
 treeShake:  .res 16              ; shake cooldown (x4 frames)
 treeCnt:    .res 1
 oakXL:      .res 1               ; snare oak trunk center, world px
@@ -61,6 +65,7 @@ oakYL:      .res 1
 pondXL:     .res 1               ; pond center px
 pondXH:     .res 1
 pondYL:     .res 1
+pondYH:     .res 1
 gateRow:    .res 1               ; gate top cell row
 gateOpenF:  .res 1
 featW:      .res 1               ; feature painter locals (setCell-safe)
@@ -535,10 +540,14 @@ featPond:
 	lsr
 	clc
 	adc tmp2
-	asl
-	asl
-	asl
 	sta pondYL
+	stz pondYH
+	asl pondYL
+	rol pondYH
+	asl pondYL
+	rol pondYH
+	asl pondYL
+	rol pondYH
 	; paint rows (setCell clobbers tmp/tmpLo/tmpHi — use featW/featH)
 	lda tmp3
 	sta featW
@@ -618,10 +627,16 @@ featTree:
 	lda tmp2
 	clc
 	adc #2
+	stz tmpHi
 	asl
+	rol tmpHi
 	asl
+	rol tmpHi
 	asl
+	rol tmpHi
 	sta treeYL,x
+	lda tmpHi
+	sta treeYH,x
 	inc treeCnt
 @norec:
 	; canopy 3x2
@@ -783,12 +798,19 @@ featBush:
 	adc #0
 	sta bushXH,x
 	lda cellY
+	stz tmpHi
 	asl
+	rol tmpHi
 	asl
+	rol tmpHi
 	asl
+	rol tmpHi
 	clc
 	adc #4
 	sta bushYL,x
+	lda tmpHi
+	adc #0
+	sta bushYH,x
 	inc bushCnt
 @norec:
 	lda #TI_BUSH
@@ -818,21 +840,37 @@ featRock:
 	asl
 	rol tmpHi
 	clc
-	adc #4
+	adc #8                       ; center of the 2x2 boulder
 	sta rockXL,x
 	lda tmpHi
 	adc #0
 	sta rockXH,x
 	lda cellY
+	stz tmpHi
 	asl
+	rol tmpHi
 	asl
+	rol tmpHi
 	asl
+	rol tmpHi
 	clc
-	adc #4
+	adc #8                       ; center of the 2x2 boulder
 	sta rockYL,x
+	lda tmpHi
+	adc #0
+	sta rockYH,x
 	inc rockCnt
 @norec:
-	lda #TI_ROCK
+	lda #TI_ROCKTL
+	jsr setCell
+	inc cellX
+	lda #TI_ROCKTR
+	jsr setCell
+	inc cellY
+	lda #TI_ROCKBR
+	jsr setCell
+	dec cellX
+	lda #TI_ROCKBL
 	jsr setCell
 	ldy #3
 	jmp scrAdv
