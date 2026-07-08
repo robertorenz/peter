@@ -252,8 +252,10 @@ escape through the gate at the far east end. Joystick in port 2.
   The status line is **five hires sprites** floating over the top of the playfield
   (a scrolling screen can't hold a fixed text row). Peter is a multicolor sprite
   with **four facings** — front, back and side profiles with walk cycles; the wolf
-  is **two sprites side by side** (48px of muzzle, ears, ridge back and raised tail,
-  auto-mirrored for facing) that hunts you across the whole map — on-screen or off —
+  is **two sprites side by side** (48px, rasterized from the web version's vector
+  wolf — white-tipped bushy tail, bright eye, dark far legs — quantized to the
+  three multicolor shades and auto-mirrored for facing) that hunts you across the
+  whole map — on-screen or off —
   and picks his way around obstacles; the scenery is a custom character set overlaid
   on the ROM font; raster-IRQ-synced 50 Hz game loop.
 - **Music:** Prokofiev on the SID — Peter's theme loops on voice 2 (pulse), and when
