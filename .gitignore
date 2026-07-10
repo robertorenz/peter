@@ -38,7 +38,8 @@ c64/build/*.sym
 c64/build/*.png
 c64/build/*.inc
 
-# X16 port — toolchain download + build intermediates (PETER.PRG IS versioned)
+# X16 port — toolchain download + build intermediates (PETER.PRG plus the
+# splash poster + autoboot stub it needs at runtime ARE versioned)
 x16/bin/
 x16/build/*.inc
 x16/build/*.lst
@@ -50,6 +51,7 @@ peter.zip
 hs_err_pid*.log
 x16/build/*.wav
 x16/build/*.bin
+!x16/build/SPLASH.BIN
 x16/build/*.txt
 x16/build/*.prg
 !x16/build/PETER.PRG

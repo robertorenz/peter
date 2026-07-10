@@ -20,8 +20,10 @@ def main():
     if os.path.exists(GIF):
         os.remove(GIF)
     env = dict(os.environ, SDL_VIDEODRIVER="dummy", SDL_AUDIODRIVER="dummy")
+    # boot via AUTOBOOT.X16 (Host FS in build\): stub loads the poster into
+    # VRAM, then chain-loads PETER.PRG — same path a real SD card takes.
     proc = subprocess.Popen(
-        [EMU, "-prg", PRG, "-run", "-gif", GIF],
+        [EMU, "-gif", GIF],
         cwd=os.path.join(X16, "build"), env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(secs)

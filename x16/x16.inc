@@ -60,6 +60,7 @@ VRAM_SPRATTR    = $1FC00
 ; ---------------- KERNAL ----------------
 GETIN           = $FFE4
 CHROUT          = $FFD2
+CLRCHN          = $FFCC
 JOYSTICK_GET    = $FF56
 RDTIM           = $FFDE
 CINV            = $0314          ; IRQ vector (RAM)

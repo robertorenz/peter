@@ -19,6 +19,10 @@ if (Test-Path tools\gen_music.py) {
     py -3 tools\gen_music.py
     if ($LASTEXITCODE -ne 0) { throw "music generation failed" }
 }
+if (Test-Path tools\gen_splash.py) {
+    py -3 tools\gen_splash.py
+    if ($LASTEXITCODE -ne 0) { throw "splash generation failed" }
+}
 
 # 2. assemble + link (cx16 target, BASIC SYS header)
 $ca65 = Join-Path $PSScriptRoot "bin\cc65\bin\ca65.exe"
@@ -31,5 +35,9 @@ if ($LASTEXITCODE -ne 0) { throw "ld65 failed" }
 Write-Host "built build\PETER.PRG ($((Get-Item build\PETER.PRG).Length) bytes)"
 
 if ($Run) {
-    & $emu -prg (Resolve-Path build\PETER.PRG) -run
+    # boot via AUTOBOOT.X16 from build\ (Host FS): the BASIC stub loads the
+    # startup poster into VRAM, then chain-loads PETER.PRG.  (-prg would
+    # skip the poster: it bypasses the autoboot and its VRAM load.)
+    Push-Location build
+    try { & $emu } finally { Pop-Location }
 }

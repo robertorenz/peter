@@ -167,6 +167,7 @@ start:
 	inc dstP+1
 	dex
 	bne @bssClr
+	jsr showSplash               ; painted poster; waits for a keypress
 	jsr videoInit
 	jsr uploadAssets
 	jsr clearSprShadow
@@ -386,5 +387,113 @@ brkTrap:
 @stop:
 	bra @stop
 
+; ------------------------------------------------------------
+; showSplash: display the painted poster the AUTOBOOT.X16 stub
+; already loaded into VRAM $00000 (BASIC: LOAD"SPLASH.BIN",8,2 —
+; the KERNAL's VRAM load, which works on SD cards and the
+; emulator's Host FS alike; the KERNAL calls fail from ML on
+; Host FS, so the stub does the loading and we do the showing).
+; The stub marks golden RAM $0400/$0401 with "PW"; no marker
+; (PRG launched directly) -> skip straight to the game.
+; Holds ~5 s, any key skips; then wipes the map VRAM so the
+; tile world comes up clean.
+; ------------------------------------------------------------
+showSplash:
+	lda $0400                    ; marker from the autoboot stub?  ($50 $57 =
+	cmp #$50                     ; "PW"; ca65's cx16 charmap turns 'P' into
+	bne @toSkip                  ; shifted PETSCII $D0, so compare raw hex)
+	lda $0401
+	cmp #$57
+	beq @present
+@toSkip:
+	jmp @skip
+@present:
+	stz $0400                    ; consume it: never show a stale poster
+	stz $0401
+
+	stz VERA_CTRL
+	stz VERA_DC_VIDEO            ; blank during the mode switch
+	lda #64
+	sta VERA_DC_HSCALE
+	sta VERA_DC_VSCALE
+
+	; poster palette -> $1FA00 (256 entries, 512 bytes)
+	VSET VRAM_PALETTE, VINC_1
+	lda #<splashPal
+	sta srcP
+	lda #>splashPal
+	sta srcP+1
+	ldx #<512
+	ldy #>512
+	jsr copyToVram
+
+	; layer0 -> 8bpp bitmap, base $00000, 320 wide
+	lda #%00000111
+	sta VERA_L0_CONFIG
+	stz VERA_L0_TILEBASE
+	stz VERA_L0_HSCROLL_L
+	stz VERA_L0_HSCROLL_H
+	lda #%00010001               ; VGA + layer0 only
+	sta VERA_DC_VIDEO
+
+	; hold ~4 s (250 jiffies); any key or gamepad button skips.  The BASIC
+	; chain-load leaves the input channel pointing at the dead file channel
+	; (which wedges GETIN into returning the same byte forever), so restore
+	; the default channels first.
+	cli
+	jsr CLRCHN
+@drain:
+	jsr GETIN                    ; flush leftover boot keystrokes
+	bne @drain
+	jsr RDTIM
+	sta tmp                      ; last jiffy seen
+	stz tmp2                     ; ticks elapsed
+@wait:
+	jsr GETIN                    ; fresh keypress skips
+	bne @done
+	php
+	sei                          ; atomic vs the KERNAL's IRQ scan
+	lda #0
+	jsr JOYSTICK_GET
+	plp
+	sta tmpLo                    ; byte0, active low
+	stx tmpHi                    ; byte1
+	lda tmpLo
+	and tmpHi
+	eor #$FF                     ; pressed bits
+	beq @tick
+	tay                          ; single button only: unscanned state
+	sec                          ; reads as "everything pressed" noise
+	sbc #1
+	sta tmp3
+	tya
+	and tmp3
+	beq @done                    ; one clean button -> skip
+@tick:
+	jsr RDTIM
+	cmp tmp
+	beq @wait                    ; still the same jiffy
+	sta tmp
+	inc tmp2
+	lda tmp2
+	cmp #250
+	bne @wait
+@done:
+	sei
+	stz VERA_DC_VIDEO            ; blank, then wipe $00000-$07FFF (32 KB)
+	VSET VRAM_MAP, VINC_1
+	ldx #0
+	ldy #0
+@wipe:
+	stz VERA_DATA0
+	iny
+	bne @wipe
+	inx
+	cpx #128
+	bne @wipe
+@skip:
+	rts
+
 .include "build/assets.inc"
 .include "build/music.inc"
+.include "build/splash.inc"
