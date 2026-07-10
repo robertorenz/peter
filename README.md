@@ -299,13 +299,30 @@ the X16's extra muscle (8 MHz CPU, the VERA video chip, a real YM2151 FM synth)
 carries **the whole storybook**: all six chapters plus **Endless Dusk**, cycling
 through the *Storybook*, *Wild* (autumn) and *Prokofiev* (winter) tiers.
 
-- **Run it:** launch `x16emu` (emulator r49+) from inside `x16\build\` — the
-  `AUTOBOOT.X16` stub boots the game automatically, poster first (same story on a
-  real X16: copy `AUTOBOOT.X16`, `SPLASH.BIN` and `PETER.PRG` onto the SD card).
-  `x16emu -prg PETER.PRG -run` still works but skips the poster. Arrows move,
-  `Z`/`Space` acts, `X` whistles, `Shift` tip-toes, `S` drops the rope, `P` pauses;
-  Left/Right on the title picks a chapter. Leave the title alone a few seconds and
-  a self-playing **attract demo** takes over.
+- **Run it** (emulator r49+):
+
+  ```powershell
+  cd x16
+  .\build.ps1 -Run       # build, then boot in the emulator
+  ```
+
+  or launch the emulator by hand — it must be started **from inside `x16\build\`**
+  so it finds the `AUTOBOOT.X16` stub, which boots the game automatically,
+  poster first:
+
+  ```powershell
+  cd x16\build
+  ..\bin\x16emu\x16emu.exe
+  ```
+
+  On a **real X16**, copy the three files `AUTOBOOT.X16`, `SPLASH.BIN` and
+  `PETER.PRG` from `x16\build\` onto the SD card root — the game boots on
+  power-on. (`x16emu -prg PETER.PRG -run` still works but skips the poster:
+  that launch mode has no host filesystem, so the stub never runs.)
+
+  Arrows move, `Z`/`Space` acts, `X` whistles, `Shift` tip-toes, `S` drops the
+  rope, `P` pauses; Left/Right on the title picks a chapter. Leave the title
+  alone a few seconds and a self-playing **attract demo** takes over.
 - **Startup screen:** the painted poster in full **320×240×256-color** VERA glory.
   `tools/gen_splash.py` quantizes `peterstartup.png` to a 256-entry 12-bit palette
   (`SPLASH.BIN`) and hand-tokenizes a three-line BASIC stub (`AUTOBOOT.X16`) that
