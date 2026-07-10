@@ -83,7 +83,7 @@
 
   /* modal */
   .overlay {
-    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center;
     background: rgba(10,16,21,.62); backdrop-filter: blur(3px);
     opacity: 0; pointer-events: none; transition: opacity .25s ease;
   }
@@ -104,6 +104,31 @@
   .modal::-webkit-scrollbar-thumb { background: #c9b98e; border-radius: 999px; }
   .modal::-webkit-scrollbar-track { background: transparent; }
   .overlay.show .modal { transform: none; }
+
+  /* opening splash — the painted poster behind the first modal */
+  .splash {
+    position: absolute; inset: 0; z-index: 1; overflow: hidden;
+    transition: opacity .6s ease; background: #0a1015;
+  }
+  .splash::before {
+    content: ""; position: absolute; inset: -24px;
+    background: url("peterstartup.png") center/cover no-repeat;
+    filter: blur(16px) brightness(.45); transform: scale(1.05);
+  }
+  .splash img {
+    position: absolute; inset: 0; margin: auto;
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  .splash.hide { opacity: 0; pointer-events: none; }
+  .splash-hint {
+    position: absolute; left: 0; right: 0; bottom: 22px; text-align: center;
+    color: #f4e6c4; font-size: 15px; letter-spacing: 2px; text-transform: uppercase;
+    text-shadow: 0 2px 10px rgba(0,0,0,.8); animation: hintPulse 1.6s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .splash-hint.gone { opacity: 0; }
+  @keyframes hintPulse { 0%,100%{opacity:.35} 50%{opacity:.95} }
   .modal .crest {
     width: 58px; height: 58px; margin: 0 auto 10px; border-radius: 50%;
     background: radial-gradient(circle at 35% 30%, #ffe6a8, var(--gold) 60%, var(--gold-deep));
@@ -164,7 +189,12 @@
         <div class="bar"><span id="alertFill"></span></div>
       </div>
 
-      <div class="overlay show" id="overlay">
+      <div class="splash" id="splash">
+        <img src="peterstartup.png" alt="Peter and the Wolf">
+        <div class="splash-hint" id="splashHint">tap to begin</div>
+      </div>
+
+      <div class="overlay" id="overlay">
         <div class="modal" id="modal">
           <div class="crest">🐺</div>
           <h2 id="mTitle">Peter and the Wolf</h2>
@@ -2674,7 +2704,24 @@
     if (state.mode==="play"){ state.mode="pause"; setCrest("⏸"); showModal("Paused","Take a breath. The meadow will wait.","Resume"); startBtn.onclick=()=>{ hideModal(); state.mode="play"; }; }
   }
 
-  startBtn.onclick = () => { state.round=1; state.score=0; startRound(); };
+  const splashEl = document.getElementById("splash");
+  startBtn.onclick = () => { splashEl.classList.add("hide"); state.round=1; state.score=0; startRound(); };
+
+  // opening splash: show the poster alone, then reveal the title modal
+  const splashHint = document.getElementById("splashHint");
+  let titleRevealed = false;
+  function revealTitle(){
+    if (titleRevealed) return;
+    titleRevealed = true;
+    clearTimeout(splashTimer);
+    splashHint.classList.add("gone");
+    overlay.classList.add("show");
+    window.removeEventListener("keydown", revealTitle);
+    splashEl.removeEventListener("click", revealTitle);
+  }
+  const splashTimer = setTimeout(revealTitle, 4000);   // linger on the poster
+  window.addEventListener("keydown", revealTitle);      // ...or skip on any input
+  splashEl.addEventListener("click", revealTitle);
   if (bestScore() > 0) mBody.innerHTML += `<br><b>Best score: ${bestScore()} ⭐</b>`;
 
   // narrator toggle (persisted)

@@ -158,6 +158,7 @@ start
 	lda #1
 	sta autoOn             ; test builds: the game plays itself
 	ENDIF
+	jsr showSplash         ; the painted poster, before anything moves
 	jsr copyCharset
 	; blank the HUD sprite block (glyphs only fill rows 0-7)
 	ldx #0
@@ -3572,7 +3573,79 @@ msgFriendHi	dc.b 0,>msgFriendB,>msgFriendD,0,0,0
 
 sfxChirp	dc.b 4,$50,4,$70,0
 
+; ============================================================
+; startup splash: the painted poster as a multicolor bitmap in
+; VIC bank 2 (data org'd at $8000/$8400/$a000 by splash.inc).
+; Runs under SEI right at boot; FIRE skips the ~5s hold.
+; ============================================================
+showSplash
+	lda #0
+	sta $d020
+	sta $d015              ; sprites off
+	lda #SPLASH_BG
+	sta $d021
+	; color-RAM nibbles for the %11 bit-pairs
+	ldx #0
+splCol
+	lda splashCol,x
+	sta COLRAM,x
+	lda splashCol+$100,x
+	sta COLRAM+$100,x
+	lda splashCol+$200,x
+	sta COLRAM+$200,x
+	lda splashCol+$2e8,x
+	sta COLRAM+$2e8,x
+	inx
+	bne splCol
+	; VIC -> bank 2: bitmap $a000, screen matrix $8400
+	lda $dd00
+	and #$fc
+	ora #$01
+	sta $dd00
+	lda #$18               ; screen +$0400, bitmap +$2000
+	sta $d018
+	lda #$d8               ; multicolor, 40 columns
+	sta $d016
+	lda #$3b               ; bitmap mode, screen on
+	sta $d011
+	; hold ~5 seconds, FIRE skips (test builds barely pause)
+	IFCONST AUTO
+	ldx #30
+	ELSE
+	ldx #250
+	ENDIF
+	lda #$ff               ; deselect keyboard rows: clean joy2 read
+	sta $dc00
+splFrame
+	lda $d012
+	cmp #$ff
+	bne splFrame           ; wait for raster line 255...
+splFrame2
+	lda $d012
+	cmp #$ff
+	beq splFrame2          ; ...then off it: exactly one frame
+	lda $dc00
+	and #$10
+	beq splDone            ; FIRE (active low)
+	dex
+	bne splFrame
+splDone
+	; back to bank 0 text mode, screen blanked until the game's first frame
+	lda $dd00
+	ora #$03
+	sta $dd00
+	lda #$0b
+	sta $d011
+	lda #$c8
+	sta $d016
+	lda #$1e
+	sta $d018
+	rts
+
 	include "build/music.inc"
 
 ; custom character bitmaps (copied over the ROM set at init)
 	include "build/chars.inc"
+
+; splash bitmap data (own orgs: $8000 color, $8400 screen, $a000 bitmap)
+	include "build/splash.inc"

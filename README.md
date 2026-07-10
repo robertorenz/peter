@@ -4,14 +4,16 @@ A small storybook game, inspired by Prokofiev's *Peter and the Wolf* — and by 
 
 You play **Peter**, sneaking through a green meadow to gather apples and slip home through the **gate** before the **wolf** sniffs you out.
 
-Everything — the meadow, the trees, Peter, the wolf, and the music cues — is drawn and synthesized in code. **No image or sound files**, just a single `index.html`.
+Everything — the meadow, the trees, Peter, the wolf, and the music cues — is drawn and synthesized in code. **No image or sound files** in the game itself, just a single `index.html` — plus one painted poster (`peterstartup.png`) shown as the startup screen, then converted down to native bitmaps for the retro ports.
 
 ## ▶️ Play
 
 **Play it online: <https://robertorenz.github.io/peter/>** (hosted on GitHub Pages —
 works on desktop, and on tablets/phones with the touch controls).
 
-Or open `index.html` in any modern browser. That's it.
+Or open `index.html` in any modern browser. That's it. The game opens on the
+painted storybook poster for a few seconds (click or press a key to skip),
+then the title card with the instructions fades in.
 
 📖 **[Player's manual](https://robertorenz.github.io/peter/manual.html)** — a storybook
 guide to the controls, the six chapters, the numbered-apple rules and the wolf's
@@ -275,6 +277,12 @@ whistles (or searches, or springs), joystick in port 2.
   chapter 2, the wolf's horns everywhere else) until you shake him off. The note
   tables are generated from the same `tools/themes_js.json` leitmotifs the web
   game uses. Sound effects run on voice 1.
+- **Startup screen:** the game boots to the painted *Peter and the Wolf* poster
+  (`peterstartup.png`), auto-converted by `tools/gen_splash.py` into a **multicolor
+  bitmap** — Floyd–Steinberg-dithered to the 16 fixed VIC colors, then squeezed
+  through the 4-colors-per-4×8-cell attribute rules — and org'd into VIC bank 2
+  (`$8000/$8400/$a000`) right inside the `.prg`. It holds for ~5 seconds
+  (FIRE skips) before the meadow loads.
 - **Build:** `c64\build.ps1` — Python converts the ASCII sprite/char art in `c64/art/`
   into dasm includes, [dasm](https://github.com/dasm-assembler/dasm) assembles
   `meadow.asm` (drop `dasm.exe` into `c64/bin/`), and VICE's `c1541` packs the disk

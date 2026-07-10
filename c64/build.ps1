@@ -13,6 +13,8 @@ py -3 tools\gen_assets.py
 if ($LASTEXITCODE -ne 0) { throw "asset generation failed" }
 py -3 tools\gen_music.py
 if ($LASTEXITCODE -ne 0) { throw "music generation failed" }
+py -3 tools\gen_splash.py
+if ($LASTEXITCODE -ne 0) { throw "splash generation failed" }
 
 # 2. assemble
 $defs = @("-DSTART_LEVEL=$StartLevel")
